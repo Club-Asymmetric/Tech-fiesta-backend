@@ -10,6 +10,9 @@ on:
     # '*/14' means 'at every 14th minute'
     - cron: "*/14 * * * *"
 
+  # This line adds a button to manually run the workflow
+  workflow_dispatch:
+
 jobs:
   ping:
     runs-on: ubuntu-latest
