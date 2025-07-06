@@ -1,0 +1,20 @@
+# .github/workflows/keep-alive.yml
+
+name: Ping Render Service
+
+# This action will run on a schedule.
+on:
+  schedule:
+    # Runs every 14 minutes. Render's free tier sleeps after 15 minutes of inactivity.
+    # Crontab syntax: minute hour day(of month) month day(of week)
+    # '*/14' means 'at every 14th minute'
+    - cron: "*/14 * * * *"
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send a GET request to the Render service
+        # We use 'curl' to send the request. The '--fail' flag makes the step fail
+        # if the request returns a non-2xx/3xx HTTP status code.
+        run: curl --fail "${{ secrets.RENDER_URL }}"
