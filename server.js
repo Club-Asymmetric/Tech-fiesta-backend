@@ -1,0 +1,81 @@
+const express = require("express");
+const cors = require("cors");
+const dotenv = require("dotenv");
+const admin = require("firebase-admin");
+
+// Load environment variables
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Middleware
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    credentials: true,
+  })
+);
+app.use(express.json());
+
+// Initialize Firebase Admin SDK
+if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+  try {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      projectId: process.env.FIREBASE_PROJECT_ID,
+    });
+    console.log("✅ Firebase Admin SDK initialized successfully");
+  } catch (error) {
+    console.warn(
+      "⚠️  Firebase Admin SDK initialization failed:",
+      error.message
+    );
+    console.warn(
+      "   Please check your FIREBASE_SERVICE_ACCOUNT_KEY in .env file"
+    );
+    console.warn("   See FIREBASE_SETUP.md for instructions");
+  }
+} else {
+  console.warn(
+    "⚠️  Firebase Admin SDK not initialized - FIREBASE_SERVICE_ACCOUNT_KEY not provided"
+  );
+  console.warn(
+    "   Registration endpoints will not work until Firebase is configured"
+  );
+  console.warn("   See FIREBASE_SETUP.md for setup instructions");
+}
+
+// Import routes
+const eventRoutes = require("./routes/events");
+const workshopRoutes = require("./routes/workshops");
+const registrationRoutes = require("./routes/registration");
+
+// Routes
+app.use("/api/events", eventRoutes);
+app.use("/api/workshops", workshopRoutes);
+app.use("/api/registration", registrationRoutes);
+
+// Health check endpoint
+app.get("/api/health", (req, res) => {
+  res.json({
+    message: "Backend server is running!",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: "Something went wrong!" });
+});
+
+// 404 handler
+app.use("*", (req, res) => {
+  res.status(404).json({ error: "Route not found" });
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
