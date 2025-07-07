@@ -8,7 +8,7 @@ on:
     # Runs every 14 minutes. Render's free tier sleeps after 15 minutes of inactivity.
     # Crontab syntax: minute hour day(of month) month day(of week)
     # '*/14' means 'at every 14th minute'
-    - cron: "*/14 * * * *"
+    - cron: "*/10 * * * *"
 
   # This line adds a button to manually run the workflow
   workflow_dispatch:
@@ -20,4 +20,4 @@ jobs:
       - name: Send a GET request to the Render service
         # We use 'curl' to send the request. The '--fail' flag makes the step fail
         # if the request returns a non-2xx/3xx HTTP status code.
-        run: curl --fail "${{ secrets.RENDER_URL }}"
+        run: curl --fail --retry 3 --retry-delay 5 "${{ secrets.RENDER_URL }}"
