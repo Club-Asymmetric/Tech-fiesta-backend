@@ -16,6 +16,11 @@ app.use(
     credentials: true,
   })
 );
+
+// Raw body parser for webhooks (must be before express.json())
+app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
+
+// JSON parser for all other routes
 app.use(express.json());
 
 // Initialize Firebase Admin SDK

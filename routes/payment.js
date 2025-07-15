@@ -15,7 +15,7 @@ const razorpay = new Razorpay({
 // Create order endpoint
 router.post("/create-order", verifyToken, async (req, res) => {
   try {
-    const { amount, currency = "INR", receipt, notes } = req.body;
+    const { amount, currency = "INR", receipt, notes, registrationData } = req.body;
     const userEmail = req.user.email;
 
     // Validate amount (minimum ₹1)
@@ -52,6 +52,7 @@ router.post("/create-order", verifyToken, async (req, res) => {
       userEmail: userEmail,
       createdAt: admin.firestore.Timestamp.now(),
       notes: notes || {},
+      registrationData: registrationData || {}, // Store for webhook processing
     });
 
     res.json({
@@ -235,5 +236,159 @@ router.get("/status/:orderId", verifyToken, async (req, res) => {
     });
   }
 });
+
+// Webhook endpoint to handle Razorpay events
+router.post("/webhook", async (req, res) => {
+  try {
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    const signature = req.headers['x-razorpay-signature'];
+    
+    if (!secret) {
+      console.error('RAZORPAY_WEBHOOK_SECRET not configured');
+      return res.status(500).json({ error: 'Webhook secret not configured' });
+    }
+
+    if (!signature) {
+      return res.status(400).json({ error: 'No signature header' });
+    }
+    
+    // Verify webhook signature
+    const expectedSignature = crypto
+      .createHmac('sha256', secret)
+      .update(req.body)
+      .digest('hex');
+
+    if (signature !== expectedSignature) {
+      console.error('Invalid webhook signature');
+      return res.status(400).json({ error: 'Invalid signature' });
+    }
+
+    const event = JSON.parse(req.body);
+    console.log('Webhook event received:', event.event);
+    
+    // Handle different webhook events
+    switch (event.event) {
+      case 'payment.captured':
+        await handlePaymentCaptured(event.payload.payment.entity);
+        break;
+      case 'payment.failed':
+        await handlePaymentFailed(event.payload.payment.entity);
+        break;
+      case 'order.paid':
+        await handleOrderPaid(event.payload.order.entity, event.payload.payment.entity);
+        break;
+      default:
+        console.log('Unhandled webhook event:', event.event);
+    }
+
+    res.json({ status: 'ok' });
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
+
+// Webhook event handlers
+async function handlePaymentCaptured(payment) {
+  try {
+    const db = admin.firestore();
+    
+    // Find the order
+    const orderDoc = await db
+      .collection("payment_orders")
+      .doc(payment.order_id)
+      .get();
+
+    if (!orderDoc.exists) {
+      console.error('Order not found for payment:', payment.id);
+      return;
+    }
+
+    const orderData = orderDoc.data();
+    
+    // Check if registration already exists
+    if (orderData.registrationId) {
+      console.log('Registration already exists for order:', payment.order_id);
+      return;
+    }
+    
+    // Generate registration ID and create registration
+    const { v4: uuidv4 } = require("uuid");
+    const registrationId = `TF2025-${uuidv4().substr(0, 8).toUpperCase()}`;
+
+    // Create registration record
+    const registrationData = {
+      registrationId,
+      paymentDetails: {
+        orderId: payment.order_id,
+        paymentId: payment.id,
+        amount: payment.amount / 100, // Convert from paise
+        currency: payment.currency,
+        status: payment.status,
+        paidAt: admin.firestore.Timestamp.now(),
+        method: payment.method,
+        webhookProcessed: true,
+      },
+      status: "confirmed",
+      paymentStatus: "verified",
+      createdAt: admin.firestore.Timestamp.now(),
+      updatedAt: admin.firestore.Timestamp.now(),
+      userId: orderData.userId,
+      userEmail: orderData.userEmail,
+      // Add registration data from order notes
+      ...orderData.registrationData
+    };
+
+    await db.collection("registrations").add(registrationData);
+    
+    // Update order status
+    await db.collection("payment_orders").doc(payment.order_id).update({
+      status: "completed",
+      paymentId: payment.id,
+      registrationId,
+      completedAt: admin.firestore.Timestamp.now(),
+      webhookProcessed: true,
+    });
+
+    console.log('Registration created via webhook:', registrationId);
+  } catch (error) {
+    console.error('Error handling payment captured:', error);
+  }
+}
+
+async function handlePaymentFailed(payment) {
+  try {
+    const db = admin.firestore();
+    
+    // Update order status to failed
+    await db.collection("payment_orders").doc(payment.order_id).update({
+      status: "failed",
+      failedAt: admin.firestore.Timestamp.now(),
+      failureReason: payment.error_description || payment.error_code || 'Payment failed',
+      webhookProcessed: true,
+    });
+
+    console.log('Payment failed via webhook:', payment.id, payment.error_description);
+  } catch (error) {
+    console.error('Error handling payment failed:', error);
+  }
+}
+
+async function handleOrderPaid(order, payment) {
+  try {
+    const db = admin.firestore();
+    
+    // Update order as paid
+    await db.collection("payment_orders").doc(order.id).update({
+      orderPaidAt: admin.firestore.Timestamp.now(),
+      orderStatus: 'paid',
+      webhookProcessed: true,
+    });
+
+    console.log('Order marked as paid via webhook:', order.id);
+  } catch (error) {
+    console.error('Error handling order paid:', error);
+  }
+}
 
 module.exports = router;
