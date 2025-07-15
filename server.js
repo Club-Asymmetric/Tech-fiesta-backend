@@ -55,12 +55,14 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
 // Import routes
 const eventRoutes = require("./routes/events");
 const workshopRoutes = require("./routes/workshops");
+const passRoutes = require("./routes/passes");
 const registrationRoutes = require("./routes/registration");
 const paymentRoutes = require("./routes/payment");
 
 // Routes
 app.use("/api/events", eventRoutes);
 app.use("/api/workshops", workshopRoutes);
+app.use("/api/passes", passRoutes);
 app.use("/api/registration", registrationRoutes);
 app.use("/api/payment", paymentRoutes);
 

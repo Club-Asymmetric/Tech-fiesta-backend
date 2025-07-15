@@ -3,8 +3,29 @@ const Razorpay = require("razorpay");
 const crypto = require("crypto");
 const admin = require("firebase-admin");
 const { verifyToken } = require("../middleware/auth");
+const { getPassById } = require("../data/passes");
 
 const router = express.Router();
+
+// Pass limits configuration (should match frontend)
+const passLimits = [
+  {
+    passId: 1,
+    workshopsIncluded: 1,
+    maxAdditionalWorkshops: 4,
+    workshopSelectionEnabled: true,
+    techEventsIncluded: 6, // Unlimited
+    maxAdditionalTechEvents: 0,
+    techEventSelectionEnabled: false, // Disabled - unlimited access
+    nonTechEventsIncluded: 4,
+    maxAdditionalNonTechEvents: 0,
+    nonTechEventSelectionEnabled: false, // Disabled - pay on arrival
+  }
+];
+
+const getPassLimits = (passId) => {
+  return passLimits.find(limit => limit.passId === passId) || null;
+};
 
 // Initialize Razorpay instance
 const razorpay = new Razorpay({
@@ -15,15 +36,85 @@ const razorpay = new Razorpay({
 // Create order endpoint
 router.post("/create-order", verifyToken, async (req, res) => {
   try {
-    const { amount, currency = "INR", receipt, notes, registrationData } = req.body;
+    const { currency = "INR", receipt, notes, registrationData } = req.body;
     const userEmail = req.user.email;
 
-    // Validate amount (minimum ₹1)
-    if (!amount || amount < 1) {
+    // Calculate dynamic amount based on selected events/workshops
+    let totalAmount = 0;
+    const isCIT = req.user.email && req.user.email.endsWith('@citchennai.net');
+    
+    // Check if pass is selected
+    if (registrationData.selectedPass) {
+      const pass = getPassById(registrationData.selectedPass);
+      const passLimitsInfo = getPassLimits(registrationData.selectedPass);
+      
+      if (pass && passLimitsInfo) {
+        // Add pass cost
+        const passPrice = isCIT ? parseInt(pass.citPrice.replace('₹', '')) : parseInt(pass.price.replace('₹', ''));
+        totalAmount += passPrice;
+        
+        // Add cost for additional tech events beyond what's included (if selection is enabled)
+        if (passLimitsInfo.techEventSelectionEnabled && registrationData.selectedEvents) {
+          const additionalEvents = Math.max(0, registrationData.selectedEvents.length - passLimitsInfo.techEventsIncluded);
+          if (additionalEvents > 0) {
+            // Each additional tech event: ₹99 regular, ₹59 CIT
+            totalAmount += additionalEvents * (isCIT ? 59 : 99);
+          }
+        }
+        
+        // Add cost for additional workshops beyond what's included
+        if (registrationData.selectedWorkshops) {
+          const additionalWorkshops = Math.max(0, registrationData.selectedWorkshops.length - passLimitsInfo.workshopsIncluded);
+          if (additionalWorkshops > 0) {
+            // Each additional workshop: ₹100 for both regular and CIT
+            totalAmount += additionalWorkshops * 100;
+          }
+        }
+      }
+    } else {
+      // No pass selected - charge for individual events and workshops
+      
+      // Calculate event costs
+      if (registrationData.selectedEvents && registrationData.selectedEvents.length > 0) {
+        registrationData.selectedEvents.forEach(event => {
+          // Tech events pricing: ₹99 regular, ₹59 CIT students
+          totalAmount += isCIT ? 59 : 99;
+        });
+      }
+
+      // Calculate workshop costs
+      if (registrationData.selectedWorkshops && registrationData.selectedWorkshops.length > 0) {
+        registrationData.selectedWorkshops.forEach(workshop => {
+          // Workshop pricing: ₹100 for both regular and CIT students
+          totalAmount += 100;
+        });
+      }
+    }
+
+    // Non-tech events are free (pay on arrival), so no cost added
+
+    // Final amount
+    const amount = totalAmount;
+
+    // Validate amount
+    if (amount < 0) {
       return res.status(400).json({
         success: false,
         error: "Invalid amount",
-        message: "Amount must be at least ₹1",
+        message: "Amount cannot be negative",
+      });
+    }
+
+    // If amount is 0, return free registration response
+    if (amount === 0) {
+      return res.json({
+        success: true,
+        data: {
+          amount: 0,
+          currency: currency,
+          freeRegistration: true,
+          message: "No payment required - registration is free!"
+        }
       });
     }
 
@@ -35,6 +126,12 @@ router.post("/create-order", verifyToken, async (req, res) => {
       notes: {
         userEmail: userEmail,
         userId: req.user.uid,
+        totalEvents: (registrationData.selectedEvents?.length || 0),
+        totalWorkshops: (registrationData.selectedWorkshops?.length || 0),
+        totalNonTechEvents: (registrationData.selectedNonTechEvents?.length || 0),
+        selectedPass: registrationData.selectedPass || null,
+        isCIT: isCIT,
+        calculatedAmount: amount,
         ...notes,
       },
     };
@@ -53,6 +150,12 @@ router.post("/create-order", verifyToken, async (req, res) => {
       createdAt: admin.firestore.Timestamp.now(),
       notes: notes || {},
       registrationData: registrationData || {}, // Store for webhook processing
+      calculatedAmount: amount,
+      breakdown: {
+        techEvents: registrationData.selectedEvents?.length || 0,
+        workshops: registrationData.selectedWorkshops?.length || 0,
+        nonTechEvents: registrationData.selectedNonTechEvents?.length || 0,
+      }
     });
 
     res.json({
@@ -62,6 +165,13 @@ router.post("/create-order", verifyToken, async (req, res) => {
         amount: order.amount,
         currency: order.currency,
         key: process.env.RAZORPAY_KEY_ID,
+        calculatedAmount: amount,
+        breakdown: {
+          techEvents: registrationData.selectedEvents?.length || 0,
+          workshops: registrationData.selectedWorkshops?.length || 0,
+          nonTechEvents: registrationData.selectedNonTechEvents?.length || 0,
+          total: amount
+        }
       },
       message: "Order created successfully",
     });
