@@ -51,11 +51,13 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
 const eventRoutes = require("./routes/events");
 const workshopRoutes = require("./routes/workshops");
 const registrationRoutes = require("./routes/registration");
+const paymentRoutes = require("./routes/payment");
 
 // Routes
 app.use("/api/events", eventRoutes);
 app.use("/api/workshops", workshopRoutes);
 app.use("/api/registration", registrationRoutes);
+app.use("/api/payment", paymentRoutes);
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {

@@ -112,71 +112,26 @@ router.post("/submit", verifyToken, async (req, res) => {
       });
     }
 
-    // Generate unique IDs
-    const registrationId = `TF2025-${uuidv4().substr(0, 8).toUpperCase()}`;
-    const documentId = uuidv4();
+    // For now, we'll use a simple ₹1 payment requirement
+    // Later this can be updated based on selected events
+    const registrationFee = 1; // ₹1 for testing
 
-    // Check for duplicates first
-    const db = admin.firestore();
-    const registrationsRef = db.collection("registrations");
-
-    const emailQuery = registrationsRef.where(
-      "email",
-      "==",
-      formData.email.toLowerCase()
-    );
-    const emailSnapshot = await emailQuery.get();
-
-    if (!emailSnapshot.empty) {
-      return res.status(400).json({
-        success: false,
-        error: "Duplicate registration",
-        message: "A registration already exists with this email address",
-      });
-    }
-
-    // Prepare registration data
-    const registrationData = {
-      registrationId,
-      name: formData.name.trim(),
-      department: formData.department.trim(),
-      email: formData.email.toLowerCase().trim(),
-      whatsapp: formData.whatsapp.trim(),
-      college: formData.college.trim(),
-      year: formData.year,
-      isTeamEvent: formData.isTeamEvent,
-      teamSize: formData.teamSize,
-      teamMembers: formData.teamMembers || [],
-      selectedEvents: formData.selectedEvents,
-      selectedWorkshops: formData.selectedWorkshops,
-      selectedNonTechEvents: formData.selectedNonTechEvents,
-      transactionIds: formData.transactionIds,
-      createdAt: admin.firestore.Timestamp.now(),
-      updatedAt: admin.firestore.Timestamp.now(),
-      status: "pending",
-      paymentStatus: "pending",
-      userId: req.user.uid,
-      userEmail: req.user.email,
-    };
-
-    // Add to Firestore
-    const docRef = await registrationsRef.add(registrationData);
-
-    console.log("Registration submitted successfully:", docRef.id);
-
+    // Return payment requirement instead of direct registration
     res.json({
       success: true,
       data: {
-        registrationId,
-        documentId: docRef.id,
+        requiresPayment: true,
+        amount: registrationFee,
+        currency: "INR",
+        message: "Payment required to complete registration",
       },
-      message: `Registration submitted successfully! Your registration ID is ${registrationId}. Please save this for future reference.`,
+      message: "Please complete payment to finalize registration",
     });
   } catch (error) {
-    console.error("Error submitting registration:", error);
+    console.error("Error processing registration:", error);
     res.status(500).json({
       success: false,
-      error: "Failed to submit registration",
+      error: "Failed to process registration",
       message: error.message,
     });
   }
