@@ -120,7 +120,7 @@ router.post("/create-order", verifyToken, async (req, res) => {
 
     // Create order in Razorpay
     const options = {
-      amount: amount * 100, // Convert to paise
+      amount: 1 * 100, // Convert to paise - use calculated amount, not hardcoded
       currency: currency,
       receipt: receipt || `TF2025_${Date.now()}`,
       notes: {
@@ -136,7 +136,9 @@ router.post("/create-order", verifyToken, async (req, res) => {
       },
     };
 
+    console.log('Creating Razorpay order with amount:', amount, 'for user:', userEmail);
     const order = await razorpay.orders.create(options);
+    console.log('Razorpay order created successfully:', order.id, 'amount:', order.amount);
 
     // Store order details in Firebase for verification
     const db = admin.firestore();
@@ -195,6 +197,8 @@ router.post("/verify-payment", verifyToken, async (req, res) => {
       registrationData,
     } = req.body;
 
+    console.log('Verifying payment for order:', razorpay_order_id, 'payment:', razorpay_payment_id);
+
     // Verify signature
     const body = razorpay_order_id + "|" + razorpay_payment_id;
     const expectedSignature = crypto
@@ -205,12 +209,15 @@ router.post("/verify-payment", verifyToken, async (req, res) => {
     const isAuthentic = expectedSignature === razorpay_signature;
 
     if (!isAuthentic) {
+      console.error('Payment signature verification failed for order:', razorpay_order_id);
       return res.status(400).json({
         success: false,
         error: "Invalid signature",
         message: "Payment verification failed",
       });
     }
+
+    console.log('Payment signature verified successfully for order:', razorpay_order_id);
 
     // Get order details from Firebase
     const db = admin.firestore();
@@ -348,7 +355,7 @@ router.get("/status/:orderId", verifyToken, async (req, res) => {
 });
 
 // Webhook endpoint to handle Razorpay events
-router.post("/webhook", async (req, res) => {
+router.post("/webhook", express.raw({type: 'application/json'}), async (req, res) => {
   try {
     const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
     const signature = req.headers['x-razorpay-signature'];
@@ -362,7 +369,7 @@ router.post("/webhook", async (req, res) => {
       return res.status(400).json({ error: 'No signature header' });
     }
     
-    // Verify webhook signature
+    // Verify webhook signature using raw body
     const expectedSignature = crypto
       .createHmac('sha256', secret)
       .update(req.body)
@@ -373,7 +380,7 @@ router.post("/webhook", async (req, res) => {
       return res.status(400).json({ error: 'Invalid signature' });
     }
 
-    const event = JSON.parse(req.body);
+    const event = JSON.parse(req.body.toString());
     console.log('Webhook event received:', event.event);
     
     // Handle different webhook events
@@ -500,5 +507,34 @@ async function handleOrderPaid(order, payment) {
     console.error('Error handling order paid:', error);
   }
 }
+
+// Debug endpoint to check environment and configuration
+router.get("/debug-config", verifyToken, async (req, res) => {
+  try {
+    const config = {
+      hasRazorpayKeyId: !!process.env.RAZORPAY_KEY_ID,
+      hasRazorpayKeySecret: !!process.env.RAZORPAY_KEY_SECRET,
+      hasWebhookSecret: !!process.env.RAZORPAY_WEBHOOK_SECRET,
+      keyIdLength: process.env.RAZORPAY_KEY_ID ? process.env.RAZORPAY_KEY_ID.length : 0,
+      environment: process.env.NODE_ENV || 'development',
+      timestamp: new Date().toISOString(),
+      userEmail: req.user.email,
+      userIsCIT: req.user.email && req.user.email.endsWith('@citchennai.net')
+    };
+
+    res.json({
+      success: true,
+      data: config,
+      message: "Configuration check completed"
+    });
+  } catch (error) {
+    console.error("Debug config error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to get debug config",
+      message: error.message,
+    });
+  }
+});
 
 module.exports = router;
