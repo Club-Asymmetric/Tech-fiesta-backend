@@ -4,6 +4,13 @@ const crypto = require("crypto");
 const admin = require("firebase-admin");
 const { verifyToken } = require("../middleware/auth");
 const { getPassById } = require("../data/passes");
+const {
+  sendRegistrationConfirmationEmail,
+  getEmailServiceStatus,
+  sendNotificationEmail,
+} = require("../services/emailService");
+const { events } = require("../data/events");
+const { workshops } = require("../data/workshops");
 
 const router = express.Router();
 
@@ -20,18 +27,30 @@ const passLimits = [
     nonTechEventsIncluded: 4,
     maxAdditionalNonTechEvents: 0,
     nonTechEventSelectionEnabled: false, // Disabled - pay on arrival
-  }
+  },
 ];
 
 const getPassLimits = (passId) => {
-  return passLimits.find(limit => limit.passId === passId) || null;
+  return passLimits.find((limit) => limit.passId === passId) || null;
 };
 
 // Initialize Razorpay instance
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
+let razorpay = null;
+try {
+  if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+    razorpay = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    });
+    console.log("✅ Razorpay initialized successfully");
+  } else {
+    console.warn(
+      "⚠️ Razorpay credentials not found - payment features will be disabled"
+    );
+  }
+} catch (error) {
+  console.error("❌ Failed to initialize Razorpay:", error.message);
+}
 
 // Create order endpoint
 router.post("/create-order", verifyToken, async (req, res) => {
@@ -41,30 +60,43 @@ router.post("/create-order", verifyToken, async (req, res) => {
 
     // Calculate dynamic amount based on selected events/workshops
     let totalAmount = 0;
-    const isCIT = req.user.email && req.user.email.endsWith('@citchennai.net');
-    
+    const isCIT = req.user.email && req.user.email.endsWith("@citchennai.net");
+
     // Check if pass is selected
     if (registrationData.selectedPass) {
       const pass = getPassById(registrationData.selectedPass);
       const passLimitsInfo = getPassLimits(registrationData.selectedPass);
-      
+
       if (pass && passLimitsInfo) {
         // Add pass cost
-        const passPrice = isCIT ? parseInt(pass.citPrice.replace('₹', '')) : parseInt(pass.price.replace('₹', ''));
+        const passPrice = isCIT
+          ? parseInt(pass.citPrice.replace("₹", ""))
+          : parseInt(pass.price.replace("₹", ""));
         totalAmount += passPrice;
-        
+
         // Add cost for additional tech events beyond what's included (if selection is enabled)
-        if (passLimitsInfo.techEventSelectionEnabled && registrationData.selectedEvents) {
-          const additionalEvents = Math.max(0, registrationData.selectedEvents.length - passLimitsInfo.techEventsIncluded);
+        if (
+          passLimitsInfo.techEventSelectionEnabled &&
+          registrationData.selectedEvents
+        ) {
+          const additionalEvents = Math.max(
+            0,
+            registrationData.selectedEvents.length -
+              passLimitsInfo.techEventsIncluded
+          );
           if (additionalEvents > 0) {
             // Each additional tech event: ₹99 regular, ₹59 CIT
             totalAmount += additionalEvents * (isCIT ? 59 : 99);
           }
         }
-        
+
         // Add cost for additional workshops beyond what's included
         if (registrationData.selectedWorkshops) {
-          const additionalWorkshops = Math.max(0, registrationData.selectedWorkshops.length - passLimitsInfo.workshopsIncluded);
+          const additionalWorkshops = Math.max(
+            0,
+            registrationData.selectedWorkshops.length -
+              passLimitsInfo.workshopsIncluded
+          );
           if (additionalWorkshops > 0) {
             // Each additional workshop: ₹100 for both regular and CIT
             totalAmount += additionalWorkshops * 100;
@@ -73,18 +105,24 @@ router.post("/create-order", verifyToken, async (req, res) => {
       }
     } else {
       // No pass selected - charge for individual events and workshops
-      
+
       // Calculate event costs
-      if (registrationData.selectedEvents && registrationData.selectedEvents.length > 0) {
-        registrationData.selectedEvents.forEach(event => {
+      if (
+        registrationData.selectedEvents &&
+        registrationData.selectedEvents.length > 0
+      ) {
+        registrationData.selectedEvents.forEach((event) => {
           // Tech events pricing: ₹99 regular, ₹59 CIT students
           totalAmount += isCIT ? 59 : 99;
         });
       }
 
       // Calculate workshop costs
-      if (registrationData.selectedWorkshops && registrationData.selectedWorkshops.length > 0) {
-        registrationData.selectedWorkshops.forEach(workshop => {
+      if (
+        registrationData.selectedWorkshops &&
+        registrationData.selectedWorkshops.length > 0
+      ) {
+        registrationData.selectedWorkshops.forEach((workshop) => {
           // Workshop pricing: ₹100 for both regular and CIT students
           totalAmount += 100;
         });
@@ -113,8 +151,17 @@ router.post("/create-order", verifyToken, async (req, res) => {
           amount: 0,
           currency: currency,
           freeRegistration: true,
-          message: "No payment required - registration is free!"
-        }
+          message: "No payment required - registration is free!",
+        },
+      });
+    }
+
+    // Check if Razorpay is initialized
+    if (!razorpay) {
+      return res.status(500).json({
+        success: false,
+        error: "Payment service not configured",
+        message: "Razorpay credentials are missing",
       });
     }
 
@@ -126,9 +173,9 @@ router.post("/create-order", verifyToken, async (req, res) => {
       notes: {
         userEmail: userEmail,
         userId: req.user.uid,
-        totalEvents: (registrationData.selectedEvents?.length || 0),
-        totalWorkshops: (registrationData.selectedWorkshops?.length || 0),
-        totalNonTechEvents: (registrationData.selectedNonTechEvents?.length || 0),
+        totalEvents: registrationData.selectedEvents?.length || 0,
+        totalWorkshops: registrationData.selectedWorkshops?.length || 0,
+        totalNonTechEvents: registrationData.selectedNonTechEvents?.length || 0,
         selectedPass: registrationData.selectedPass || null,
         isCIT: isCIT,
         calculatedAmount: amount,
@@ -182,8 +229,8 @@ router.post("/create-order", verifyToken, async (req, res) => {
           techEvents: registrationData.selectedEvents?.length || 0,
           workshops: registrationData.selectedWorkshops?.length || 0,
           nonTechEvents: registrationData.selectedNonTechEvents?.length || 0,
-          total: amount
-        }
+          total: amount,
+        },
       },
       message: "Order created successfully",
     });
@@ -207,7 +254,12 @@ router.post("/verify-payment", verifyToken, async (req, res) => {
       registrationData,
     } = req.body;
 
-    console.log('Verifying payment for order:', razorpay_order_id, 'payment:', razorpay_payment_id);
+    console.log(
+      "Verifying payment for order:",
+      razorpay_order_id,
+      "payment:",
+      razorpay_payment_id
+    );
 
     // Verify signature
     const body = razorpay_order_id + "|" + razorpay_payment_id;
@@ -219,7 +271,10 @@ router.post("/verify-payment", verifyToken, async (req, res) => {
     const isAuthentic = expectedSignature === razorpay_signature;
 
     if (!isAuthentic) {
-      console.error('Payment signature verification failed for order:', razorpay_order_id);
+      console.error(
+        "Payment signature verification failed for order:",
+        razorpay_order_id
+      );
       return res.status(400).json({
         success: false,
         error: "Invalid signature",
@@ -227,7 +282,10 @@ router.post("/verify-payment", verifyToken, async (req, res) => {
       });
     }
 
-    console.log('Payment signature verified successfully for order:', razorpay_order_id);
+    console.log(
+      "Payment signature verified successfully for order:",
+      razorpay_order_id
+    );
 
     // Get order details from Firebase
     const db = admin.firestore();
@@ -310,6 +368,29 @@ router.post("/verify-payment", verifyToken, async (req, res) => {
     });
 
     console.log("Payment verified and registration completed:", registrationId);
+
+    // Send confirmation email
+    try {
+      const emailResult = await sendRegistrationConfirmationEmail(
+        finalRegistrationData,
+        events,
+        workshops
+      );
+
+      if (emailResult.success) {
+        console.log(
+          `Confirmation email sent successfully to ${req.user.email} using ${emailResult.usedEmail}`
+        );
+      } else {
+        console.error(
+          `Failed to send confirmation email: ${emailResult.error}`
+        );
+        // Don't fail the registration if email fails
+      }
+    } catch (emailError) {
+      console.error("Error sending confirmation email:", emailError);
+      // Continue with successful response even if email fails
+    }
 
     res.json({
       success: true,
@@ -424,23 +505,129 @@ router.get("/debug-config", verifyToken, async (req, res) => {
       hasRazorpayKeyId: !!process.env.RAZORPAY_KEY_ID,
       hasRazorpayKeySecret: !!process.env.RAZORPAY_KEY_SECRET,
       hasWebhookSecret: !!process.env.RAZORPAY_WEBHOOK_SECRET,
-      keyIdLength: process.env.RAZORPAY_KEY_ID ? process.env.RAZORPAY_KEY_ID.length : 0,
-      environment: process.env.NODE_ENV || 'development',
+      keyIdLength: process.env.RAZORPAY_KEY_ID
+        ? process.env.RAZORPAY_KEY_ID.length
+        : 0,
+      environment: process.env.NODE_ENV || "development",
       timestamp: new Date().toISOString(),
       userEmail: req.user.email,
-      userIsCIT: req.user.email && req.user.email.endsWith('@citchennai.net')
+      userIsCIT: req.user.email && req.user.email.endsWith("@citchennai.net"),
+      emailService: getEmailServiceStatus(),
     };
 
     res.json({
       success: true,
       data: config,
-      message: "Configuration check completed"
+      message: "Configuration check completed",
     });
   } catch (error) {
     console.error("Debug config error:", error);
     res.status(500).json({
       success: false,
       error: "Failed to get debug config",
+      message: error.message,
+    });
+  }
+});
+
+// Email service status endpoint
+router.get("/email-status", verifyToken, async (req, res) => {
+  try {
+    const emailStatus = getEmailServiceStatus();
+
+    res.json({
+      success: true,
+      data: {
+        emailConfigs: emailStatus,
+        totalConfigured: emailStatus.filter((config) => config.isConfigured)
+          .length,
+        totalUsage: emailStatus.reduce(
+          (sum, config) => sum + config.currentUsage,
+          0
+        ),
+        timestamp: new Date().toISOString(),
+      },
+      message: "Email service status retrieved successfully",
+    });
+  } catch (error) {
+    console.error("Email status error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to get email status",
+      message: error.message,
+    });
+  }
+});
+
+// Test email endpoint
+router.post("/test-email", verifyToken, async (req, res) => {
+  try {
+    const { type = "test" } = req.body;
+    const userEmail = req.user.email;
+
+    if (type === "registration") {
+      // Test registration email with sample data
+      const sampleRegistrationData = {
+        registrationId: `TEST-${Date.now()}`,
+        userEmail: userEmail,
+        paymentDetails: {
+          paymentId: "test_payment_123",
+          amount: 299,
+          orderId: "test_order_123",
+        },
+        selectedEvents: [1, 2],
+        selectedWorkshops: [1],
+        selectedNonTechEvents: [],
+        selectedPass: null,
+        status: "confirmed",
+        paymentStatus: "verified",
+      };
+
+      const result = await sendRegistrationConfirmationEmail(
+        sampleRegistrationData,
+        events,
+        workshops
+      );
+
+      res.json({
+        success: result.success,
+        data: result,
+        message: result.success
+          ? "Test registration email sent successfully"
+          : "Failed to send test email",
+      });
+    } else {
+      // Test simple notification email
+      const result = await sendNotificationEmail(
+        userEmail,
+        "🧪 Tech Fiesta 2025 - Email Service Test",
+        `
+        <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+          <h2 style="color: #667eea;">Email Service Test</h2>
+          <p>This is a test email from the Tech Fiesta 2025 email service.</p>
+          <p><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+          <p><strong>Recipient:</strong> ${userEmail}</p>
+          <p style="background: #f0f0f0; padding: 15px; border-radius: 5px;">
+            ✅ Email service is working correctly!
+          </p>
+        </div>
+        `,
+        `Tech Fiesta 2025 - Email Service Test\n\nThis is a test email from the Tech Fiesta 2025 email service.\nTimestamp: ${new Date().toISOString()}\nRecipient: ${userEmail}\n\nEmail service is working correctly!`
+      );
+
+      res.json({
+        success: result.success,
+        data: result,
+        message: result.success
+          ? "Test email sent successfully"
+          : "Failed to send test email",
+      });
+    }
+  } catch (error) {
+    console.error("Test email error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to send test email",
       message: error.message,
     });
   }
