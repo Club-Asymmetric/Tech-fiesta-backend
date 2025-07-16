@@ -282,7 +282,7 @@ router.post("/verify-payment", verifyToken, async (req, res) => {
     console.log(
       "Payment verified successfully for order:",
       razorpay_order_id,
-      "Type:", isQRScanDetection ? "QR scan" : "Direct payment"
+      "Payment completed successfully"
     );
 
     // Get order details from Firebase
