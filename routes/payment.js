@@ -136,9 +136,18 @@ router.post("/create-order", verifyToken, async (req, res) => {
       },
     };
 
+    console.log('=== PAYMENT DEBUG ===');
+    console.log('Environment:', process.env.NODE_ENV || 'development');
+    console.log('Razorpay Key ID (first 10 chars):', process.env.RAZORPAY_KEY_ID ? process.env.RAZORPAY_KEY_ID.substring(0, 10) + '...' : 'MISSING');
+    console.log('Calculated amount:', amount);
+    console.log('Options being sent to Razorpay:', JSON.stringify(options, null, 2));
     console.log('Creating Razorpay order with amount:', amount, 'for user:', userEmail);
+    
     const order = await razorpay.orders.create(options);
+    
     console.log('Razorpay order created successfully:', order.id, 'amount:', order.amount);
+    console.log('Full order response:', JSON.stringify(order, null, 2));
+    console.log('=== END DEBUG ===');
 
     // Store order details in Firebase for verification
     const db = admin.firestore();
@@ -389,6 +398,22 @@ router.get("/payment-warnings", (req, res) => {
       subtitle: "Please read carefully before proceeding"
     },
     message: "Payment warnings retrieved successfully"
+  });
+});
+
+// Simple environment test endpoint (no auth required for debugging)
+router.get("/env-test", (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      nodeEnv: process.env.NODE_ENV || 'development',
+      hasRazorpayKeyId: !!process.env.RAZORPAY_KEY_ID,
+      razorpayKeyIdPrefix: process.env.RAZORPAY_KEY_ID ? process.env.RAZORPAY_KEY_ID.substring(0, 8) + '...' : 'MISSING',
+      hasRazorpaySecret: !!process.env.RAZORPAY_KEY_SECRET,
+      port: process.env.PORT || 'not set',
+      timestamp: new Date().toISOString()
+    },
+    message: "Environment check completed"
   });
 });
 
