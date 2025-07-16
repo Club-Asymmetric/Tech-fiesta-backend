@@ -261,30 +261,51 @@ router.post("/verify-payment", verifyToken, async (req, res) => {
       razorpay_payment_id
     );
 
-    // Verify signature
-    const body = razorpay_order_id + "|" + razorpay_payment_id;
-    const expectedSignature = crypto
-      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-      .update(body.toString())
-      .digest("hex");
+    // Check if this is a QR scan detection (frontend polling detected completed payment)
+    const isQRScanDetection = razorpay_signature === 'qr_scan_detected';
+    
+    let isAuthentic = false;
+    
+    if (isQRScanDetection) {
+      // For QR scan detection, we'll verify by checking the order status directly with Razorpay
+      console.log("QR scan payment detection - verifying order status with Razorpay");
+      try {
+        const orderStatus = await razorpay.orders.fetch(razorpay_order_id);
+        // Check if order status indicates payment was completed
+        isAuthentic = orderStatus && (orderStatus.status === 'paid' || orderStatus.amount_paid > 0);
+        console.log("Razorpay order status:", orderStatus.status, "amount_paid:", orderStatus.amount_paid);
+      } catch (error) {
+        console.error("Error fetching order status from Razorpay:", error);
+        isAuthentic = false;
+      }
+    } else {
+      // Normal signature verification for direct payments
+      const body = razorpay_order_id + "|" + razorpay_payment_id;
+      const expectedSignature = crypto
+        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+        .update(body.toString())
+        .digest("hex");
 
-    const isAuthentic = expectedSignature === razorpay_signature;
+      isAuthentic = expectedSignature === razorpay_signature;
+    }
 
     if (!isAuthentic) {
       console.error(
-        "Payment signature verification failed for order:",
-        razorpay_order_id
+        "Payment verification failed for order:",
+        razorpay_order_id,
+        "Type:", isQRScanDetection ? "QR scan" : "Direct payment"
       );
       return res.status(400).json({
         success: false,
-        error: "Invalid signature",
+        error: "Invalid payment verification",
         message: "Payment verification failed",
       });
     }
 
     console.log(
-      "Payment signature verified successfully for order:",
-      razorpay_order_id
+      "Payment verified successfully for order:",
+      razorpay_order_id,
+      "Type:", isQRScanDetection ? "QR scan" : "Direct payment"
     );
 
     // Get order details from Firebase
