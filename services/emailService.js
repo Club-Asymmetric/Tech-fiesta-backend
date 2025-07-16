@@ -1,5 +1,8 @@
 const nodemailer = require("nodemailer");
 
+console.log(`🚀 Email Service Module Loaded`);
+console.log(`📅 Service initialized at: ${new Date().toLocaleString()}`);
+
 // Email configuration with rotation
 const emailConfigs = [
   {
@@ -39,51 +42,135 @@ const emailConfigs = [
   },
 ];
 
+// Log initial email configuration status
+console.log(`📧 Email Configuration Status:`);
+emailConfigs.forEach((config, index) => {
+  const status = {
+    index: index + 1,
+    email: config.email
+      ? config.email.replace(/(.{3}).*(@.*)/, "$1***$2")
+      : "Not configured",
+    hasPassword: !!config.password,
+    isConfigured: !!(config.email && config.password),
+  };
+  console.log(`  Email ${index + 1}:`, status);
+});
+
+const configuredEmails = emailConfigs.filter(
+  (config) => config.email && config.password
+).length;
+console.log(
+  `✅ ${configuredEmails}/${emailConfigs.length} email accounts configured`
+);
+
 let currentEmailIndex = 0;
 
 // Reset usage counters daily
 const resetUsageCounters = () => {
-  emailConfigs.forEach((config) => {
+  console.log(`🔄 Daily email usage counter reset initiated`);
+  console.log(`📊 Previous usage stats:`);
+  emailConfigs.forEach((config, index) => {
+    console.log(
+      `  Email ${index + 1}: ${config.currentUsage}/${config.dailyLimit} (${
+        config.email
+          ? config.email.replace(/(.{3}).*(@.*)/, "$1***$2")
+          : "Not configured"
+      })`
+    );
     config.currentUsage = 0;
   });
-  console.log("Email usage counters reset");
+  console.log(`✅ All email usage counters reset to 0`);
+  console.log(
+    `📅 Next reset scheduled for: ${new Date(
+      Date.now() + 24 * 60 * 60 * 1000
+    ).toLocaleString()}`
+  );
 };
 
 // Schedule daily reset at midnight
+console.log(`⏰ Scheduling daily email usage reset every 24 hours`);
+console.log(
+  `📅 First reset scheduled for: ${new Date(
+    Date.now() + 24 * 60 * 60 * 1000
+  ).toLocaleString()}`
+);
 setInterval(resetUsageCounters, 24 * 60 * 60 * 1000);
 
 // Get next available email configuration
 const getAvailableEmailConfig = () => {
+  console.log(
+    `🔍 Looking for available email config. Current index: ${currentEmailIndex}`
+  );
+
   // Try to find an email with available quota
   for (let i = 0; i < emailConfigs.length; i++) {
     const config = emailConfigs[(currentEmailIndex + i) % emailConfigs.length];
+    const configIndex = (currentEmailIndex + i) % emailConfigs.length;
+
+    console.log(`📧 Checking email config ${configIndex + 1}:`, {
+      email: config.email
+        ? config.email.replace(/(.{3}).*(@.*)/, "$1***$2")
+        : "Not configured",
+      hasPassword: !!config.password,
+      currentUsage: config.currentUsage,
+      dailyLimit: config.dailyLimit,
+      available: config.currentUsage < config.dailyLimit,
+    });
+
     if (
       config.email &&
       config.password &&
       config.currentUsage < config.dailyLimit
     ) {
       currentEmailIndex = (currentEmailIndex + i) % emailConfigs.length;
+      console.log(
+        `✅ Selected email config ${currentEmailIndex + 1} for sending`
+      );
       return config;
     }
   }
 
   // If all emails are at limit, use the first one anyway (will handle error gracefully)
-  console.warn("All email accounts have reached their daily limit");
-  return (
+  console.warn("⚠️ All email accounts have reached their daily limit");
+  const fallbackConfig =
     emailConfigs.find((config) => config.email && config.password) ||
-    emailConfigs[0]
-  );
+    emailConfigs[0];
+  console.log(`🔄 Using fallback email config:`, {
+    email: fallbackConfig.email
+      ? fallbackConfig.email.replace(/(.{3}).*(@.*)/, "$1***$2")
+      : "Not configured",
+    hasPassword: !!fallbackConfig.password,
+    currentUsage: fallbackConfig.currentUsage,
+    dailyLimit: fallbackConfig.dailyLimit,
+  });
+  return fallbackConfig;
 };
 
 // Create transporter for the selected email
 const createTransporter = (config) => {
-  return nodemailer.createTransporter({
-    service: "gmail",
-    auth: {
-      user: config.email,
-      pass: config.password,
-    },
-  });
+  console.log(
+    `🚀 Creating transporter for email: ${
+      config.email
+        ? config.email.replace(/(.{3}).*(@.*)/, "$1***$2")
+        : "Not configured"
+    }`
+  );
+
+  try {
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: config.email,
+        pass: config.password,
+      },
+    });
+
+    console.log(`✅ Transporter created successfully`);
+    return transporter;
+  } catch (error) {
+    console.error(`❌ Error creating transporter:`, error.message);
+    throw error;
+  }
 };
 
 // Generate email template for registration confirmation
@@ -260,20 +347,37 @@ const sendRegistrationConfirmationEmail = async (
   events = [],
   workshops = []
 ) => {
+  console.log(`📨 Starting registration confirmation email process`);
+  console.log(`📧 Recipient: ${registrationData.userEmail}`);
+  console.log(`🆔 Registration ID: ${registrationData.registrationId}`);
+  console.log(`💰 Payment Amount: ₹${registrationData.paymentDetails.amount}`);
+
   try {
     const emailConfig = getAvailableEmailConfig();
 
     if (!emailConfig.email || !emailConfig.password) {
-      console.error("No email configuration available");
+      console.error("❌ No email configuration available");
       return { success: false, error: "Email service not configured" };
     }
 
+    console.log(
+      `🔧 Using email config for sending: ${emailConfig.email.replace(
+        /(.{3}).*(@.*)/,
+        "$1***$2"
+      )}`
+    );
+
     const transporter = createTransporter(emailConfig);
 
+    console.log(`📝 Generating email template...`);
+    logEmailTemplateInfo(registrationData, events, workshops);
     const htmlContent = generateRegistrationEmailTemplate(
       registrationData,
       events,
       workshops
+    );
+    console.log(
+      `✅ Email template generated successfully (${htmlContent.length} characters)`
     );
 
     const mailOptions = {
@@ -296,6 +400,15 @@ For queries, contact: techfiesta@citchennai.net
       `,
     };
 
+    console.log(`📤 Sending email...`);
+    console.log(`Mail options:`, {
+      from: mailOptions.from,
+      to: mailOptions.to,
+      subject: mailOptions.subject,
+      hasHtml: !!mailOptions.html,
+      hasText: !!mailOptions.text,
+    });
+
     const info = await transporter.sendMail(mailOptions);
 
     // Increment usage counter
@@ -304,12 +417,15 @@ For queries, contact: techfiesta@citchennai.net
     // Move to next email for the next send
     currentEmailIndex = (currentEmailIndex + 1) % emailConfigs.length;
 
-    console.log(
-      `Registration email sent successfully to ${registrationData.userEmail} using ${emailConfig.email}`
-    );
-    console.log(
-      `Current usage for ${emailConfig.email}: ${emailConfig.currentUsage}/${emailConfig.dailyLimit}`
-    );
+    console.log(`✅ Registration email sent successfully!`);
+    console.log(`📧 Sent to: ${registrationData.userEmail}`);
+    console.log(`🆔 Message ID: ${info.messageId}`);
+    console.log(`📊 Email usage stats:`, {
+      usedEmail: emailConfig.email.replace(/(.{3}).*(@.*)/, "$1***$2"),
+      currentUsage: emailConfig.currentUsage,
+      dailyLimit: emailConfig.dailyLimit,
+      nextEmailIndex: currentEmailIndex,
+    });
 
     return {
       success: true,
@@ -318,15 +434,23 @@ For queries, contact: techfiesta@citchennai.net
       currentUsage: emailConfig.currentUsage,
     };
   } catch (error) {
-    console.error("Error sending registration email:", error);
+    console.error("❌ Error sending registration email:", error);
+    console.error("Error details:", {
+      code: error.code,
+      message: error.message,
+      stack: error.stack,
+    });
 
     // If current email failed, try the next one
     if (error.code === "EAUTH" || error.code === "ELIMIT") {
-      console.log("Trying next email configuration...");
+      console.log("🔄 Trying next email configuration...");
       currentEmailIndex = (currentEmailIndex + 1) % emailConfigs.length;
 
       // Recursive retry with next email (only once to avoid infinite loop)
       if (currentEmailIndex !== 0) {
+        console.log(
+          `🔁 Retrying with next email config (index: ${currentEmailIndex})`
+        );
         return await sendRegistrationConfirmationEmail(
           registrationData,
           events,
@@ -345,13 +469,24 @@ For queries, contact: techfiesta@citchennai.net
 
 // Send general notification email
 const sendNotificationEmail = async (to, subject, htmlContent, textContent) => {
+  console.log(`📨 Starting notification email process`);
+  console.log(`📧 Recipient: ${to}`);
+  console.log(`📝 Subject: ${subject}`);
+
   try {
     const emailConfig = getAvailableEmailConfig();
 
     if (!emailConfig.email || !emailConfig.password) {
-      console.error("No email configuration available");
+      console.error("❌ No email configuration available");
       return { success: false, error: "Email service not configured" };
     }
+
+    console.log(
+      `🔧 Using email config: ${emailConfig.email.replace(
+        /(.{3}).*(@.*)/,
+        "$1***$2"
+      )}`
+    );
 
     const transporter = createTransporter(emailConfig);
 
@@ -363,11 +498,28 @@ const sendNotificationEmail = async (to, subject, htmlContent, textContent) => {
       text: textContent,
     };
 
+    console.log(`📤 Sending notification email...`);
+    console.log(`Mail options:`, {
+      from: mailOptions.from,
+      to: mailOptions.to,
+      subject: mailOptions.subject,
+      hasHtml: !!mailOptions.html,
+      hasText: !!mailOptions.text,
+    });
+
     const info = await transporter.sendMail(mailOptions);
     emailConfig.currentUsage++;
     currentEmailIndex = (currentEmailIndex + 1) % emailConfigs.length;
 
-    console.log(`Email sent successfully to ${to} using ${emailConfig.email}`);
+    console.log(`✅ Notification email sent successfully!`);
+    console.log(`📧 Sent to: ${to}`);
+    console.log(`🆔 Message ID: ${info.messageId}`);
+    console.log(`📊 Email usage stats:`, {
+      usedEmail: emailConfig.email.replace(/(.{3}).*(@.*)/, "$1***$2"),
+      currentUsage: emailConfig.currentUsage,
+      dailyLimit: emailConfig.dailyLimit,
+      nextEmailIndex: currentEmailIndex,
+    });
 
     return {
       success: true,
@@ -375,14 +527,20 @@ const sendNotificationEmail = async (to, subject, htmlContent, textContent) => {
       usedEmail: emailConfig.email,
     };
   } catch (error) {
-    console.error("Error sending email:", error);
+    console.error("❌ Error sending notification email:", error);
+    console.error("Error details:", {
+      code: error.code,
+      message: error.message,
+      stack: error.stack,
+    });
     return { success: false, error: error.message };
   }
 };
 
 // Get email service status
 const getEmailServiceStatus = () => {
-  return emailConfigs.map((config, index) => ({
+  console.log(`📊 Email service status requested`);
+  const status = emailConfigs.map((config, index) => ({
     index: index + 1,
     email: config.email
       ? config.email.replace(/(.{3}).*(@.*)/, "$1***$2")
@@ -392,6 +550,110 @@ const getEmailServiceStatus = () => {
     dailyLimit: config.dailyLimit,
     isActive: index === currentEmailIndex,
   }));
+
+  console.log(`📈 Current email service status:`, status);
+  console.log(`🎯 Active email index: ${currentEmailIndex + 1}`);
+
+  return status;
+};
+
+// Test email connectivity for all configured accounts
+const testEmailConnectivity = async () => {
+  console.log(`🔧 Testing email connectivity for all configured accounts...`);
+  const results = [];
+
+  for (let i = 0; i < emailConfigs.length; i++) {
+    const config = emailConfigs[i];
+
+    if (!config.email || !config.password) {
+      console.log(`⚠️ Email ${i + 1}: Not configured`);
+      results.push({
+        index: i + 1,
+        email: "Not configured",
+        status: "skipped",
+        error: "Missing email or password",
+      });
+      continue;
+    }
+
+    console.log(
+      `🔍 Testing email ${i + 1}: ${config.email.replace(
+        /(.{3}).*(@.*)/,
+        "$1***$2"
+      )}`
+    );
+
+    try {
+      const transporter = createTransporter(config);
+
+      // Verify the connection
+      await transporter.verify();
+
+      console.log(`✅ Email ${i + 1}: Connection successful`);
+      results.push({
+        index: i + 1,
+        email: config.email.replace(/(.{3}).*(@.*)/, "$1***$2"),
+        status: "success",
+        message: "Connection verified",
+      });
+    } catch (error) {
+      console.error(`❌ Email ${i + 1}: Connection failed -`, error.message);
+      results.push({
+        index: i + 1,
+        email: config.email.replace(/(.{3}).*(@.*)/, "$1***$2"),
+        status: "failed",
+        error: error.message,
+        code: error.code,
+      });
+    }
+  }
+
+  console.log(`🏁 Email connectivity test completed`);
+  console.table(results);
+
+  return results;
+};
+
+// Log detailed email template information
+const logEmailTemplateInfo = (registrationData, events, workshops) => {
+  console.log(`📋 Email Template Information:`);
+  console.log(`  Registration ID: ${registrationData.registrationId}`);
+  console.log(`  User Email: ${registrationData.userEmail}`);
+  console.log(
+    `  Is CIT Student: ${registrationData.userEmail?.endsWith(
+      "@citchennai.net"
+    )}`
+  );
+  console.log(`  Payment Amount: ₹${registrationData.paymentDetails?.amount}`);
+  console.log(`  Payment ID: ${registrationData.paymentDetails?.paymentId}`);
+  console.log(`  Selected Pass: ${registrationData.selectedPass || "None"}`);
+  console.log(
+    `  Selected Events: ${registrationData.selectedEvents?.length || 0} events`
+  );
+  console.log(
+    `  Selected Workshops: ${
+      registrationData.selectedWorkshops?.length || 0
+    } workshops`
+  );
+  console.log(
+    `  Selected Non-Tech Events: ${
+      registrationData.selectedNonTechEvents?.length || 0
+    } events`
+  );
+
+  if (events?.length > 0) {
+    console.log(`  Available Events: ${events.length}`);
+    events.forEach((event) => {
+      console.log(`    - ${event.title} (ID: ${event.id})`);
+    });
+  }
+
+  if (workshops?.length > 0) {
+    console.log(`  Available Workshops: ${workshops.length}`);
+    workshops.forEach((workshop) => {
+      console.log(`    - ${workshop.title} (ID: ${workshop.id})`);
+    });
+  }
 };
 
 module.exports = {
@@ -399,4 +661,6 @@ module.exports = {
   sendNotificationEmail,
   getEmailServiceStatus,
   resetUsageCounters,
+  testEmailConnectivity,
+  logEmailTemplateInfo,
 };
