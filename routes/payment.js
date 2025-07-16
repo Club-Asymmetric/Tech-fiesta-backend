@@ -439,9 +439,12 @@ router.get("/status/:orderId", verifyToken, async (req, res) => {
     const { orderId } = req.params;
     const db = admin.firestore();
 
+    console.log(`📊 Status check for order: ${orderId} by user: ${req.user.email}`);
+
     const orderDoc = await db.collection("payment_orders").doc(orderId).get();
 
     if (!orderDoc.exists) {
+      console.log(`❌ Order not found: ${orderId}`);
       return res.status(404).json({
         success: false,
         error: "Order not found",
@@ -453,12 +456,15 @@ router.get("/status/:orderId", verifyToken, async (req, res) => {
 
     // Verify user owns this order
     if (orderData.userId !== req.user.uid) {
+      console.log(`🚫 Unauthorized access attempt for order: ${orderId} by user: ${req.user.uid}`);
       return res.status(403).json({
         success: false,
         error: "Unauthorized",
         message: "You are not authorized to view this order",
       });
     }
+
+    console.log(`✅ Order status: ${orderData.status} for order: ${orderId}`);
 
     res.json({
       success: true,
