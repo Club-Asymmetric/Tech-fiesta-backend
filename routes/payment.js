@@ -167,7 +167,7 @@ router.post("/create-order", verifyToken, async (req, res) => {
 
     // Create order in Razorpay
     const options = {
-      amount: 1 * 100, // Convert to paise - use calculated amount
+      amount: amount * 100, // Convert to paise - use calculated amount
       currency: currency,
       receipt: receipt || `TF2025_${Date.now()}`,
       notes: {
