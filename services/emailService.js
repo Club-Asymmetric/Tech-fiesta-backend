@@ -549,7 +549,7 @@ Payment ID: ${
 Your registration has been confirmed successfully!
 Please save this email for your records and bring it to events for verification.
 
-For queries, contact: techfiesta@citchennai.net
+For queries, contact: Asymmetric@citchennai.net
       `,
     };
 
