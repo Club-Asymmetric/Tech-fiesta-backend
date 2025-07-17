@@ -112,16 +112,50 @@ router.post("/submit", verifyToken, async (req, res) => {
       });
     }
 
-    // For now, we'll use a simple ₹1 payment requirement
-    // Later this can be updated based on selected events
-    const registrationFee = 1; // ₹1 for testing
+    // Calculate total amount based on selected events/workshops
+    const totalAmount = 0; // For free registrations
 
-    // Return payment requirement instead of direct registration
+    if (totalAmount === 0) {
+      // Free registration - create record directly
+      const registrationId = `TF2025-${require('uuid').v4().substr(0, 8).toUpperCase()}`;
+      
+      // Create registration record
+      const db = admin.firestore();
+      const registrationData = {
+        registrationId,
+        userId: req.user.uid,
+        userEmail: req.user.email,
+        ...formData,
+        status: "confirmed", // Directly confirmed since it's free
+        paymentStatus: "not-required",
+        createdAt: admin.firestore.Timestamp.now(),
+        updatedAt: admin.firestore.Timestamp.now(),
+        eventCount: (formData.selectedEvents?.length || 0) + 
+                    (formData.selectedWorkshops?.length || 0) + 
+                    (formData.selectedNonTechEvents?.length || 0)
+      };
+      
+      await db.collection("registrations").add(registrationData);
+      
+      console.log(`Free registration completed: ${registrationId} for user ${userEmail}`);
+      
+      return res.json({
+        success: true,
+        data: {
+          registrationId,
+          status: "confirmed",
+          eventCount: registrationData.eventCount
+        },
+        message: "Registration completed successfully"
+      });
+    }
+
+    // For paid registrations (not currently in use since totalAmount is always 0)
     res.json({
       success: true,
       data: {
         requiresPayment: true,
-        amount: registrationFee,
+        amount: totalAmount,
         currency: "INR",
         message: "Payment required to complete registration",
       },
