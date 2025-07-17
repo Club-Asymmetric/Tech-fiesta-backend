@@ -183,39 +183,60 @@ router.post("/create-order", verifyToken, async (req, res) => {
       },
     };
 
-    console.log('=== PAYMENT DEBUG ===');
-    console.log('Environment:', process.env.NODE_ENV || 'development');
-    console.log('Razorpay Key ID (first 10 chars):', process.env.RAZORPAY_KEY_ID ? process.env.RAZORPAY_KEY_ID.substring(0, 10) + '...' : 'MISSING');
-    console.log('Calculated amount:', amount);
-    console.log('Options being sent to Razorpay:', JSON.stringify(options, null, 2));
-    console.log('Creating Razorpay order with amount:', amount, 'for user:', userEmail);
-    
+    console.log("=== PAYMENT DEBUG ===");
+    console.log("Environment:", process.env.NODE_ENV || "development");
+    console.log(
+      "Razorpay Key ID (first 10 chars):",
+      process.env.RAZORPAY_KEY_ID
+        ? process.env.RAZORPAY_KEY_ID.substring(0, 10) + "..."
+        : "MISSING"
+    );
+    console.log("Calculated amount:", amount);
+    console.log(
+      "Options being sent to Razorpay:",
+      JSON.stringify(options, null, 2)
+    );
+    console.log(
+      "Creating Razorpay order with amount:",
+      amount,
+      "for user:",
+      userEmail
+    );
+
     const order = await razorpay.orders.create(options);
-    
-    console.log('Razorpay order created successfully:', order.id, 'amount:', order.amount);
-    console.log('Full order response:', JSON.stringify(order, null, 2));
-    console.log('=== END DEBUG ===');
+
+    console.log(
+      "Razorpay order created successfully:",
+      order.id,
+      "amount:",
+      order.amount
+    );
+    console.log("Full order response:", JSON.stringify(order, null, 2));
+    console.log("=== END DEBUG ===");
 
     // Store order details in Firebase for verification
     const db = admin.firestore();
-    await db.collection("payment_orders").doc(order.id).set({
-      orderId: order.id,
-      amount: amount,
-      currency: currency,
-      status: "created",
-      userId: req.user.uid,
-      userEmail: userEmail,
-      createdAt: admin.firestore.Timestamp.now(),
-      notes: notes || {},
-      registrationData: registrationData || {}, // Store for client verification
-      calculatedAmount: amount,
-      verificationMethod: "client-side", // Indicates client-side verification flow
-      breakdown: {
-        techEvents: registrationData.selectedEvents?.length || 0,
-        workshops: registrationData.selectedWorkshops?.length || 0,
-        nonTechEvents: registrationData.selectedNonTechEvents?.length || 0,
-      }
-    });
+    await db
+      .collection("payment_orders")
+      .doc(order.id)
+      .set({
+        orderId: order.id,
+        amount: amount,
+        currency: currency,
+        status: "created",
+        userId: req.user.uid,
+        userEmail: userEmail,
+        createdAt: admin.firestore.Timestamp.now(),
+        notes: notes || {},
+        registrationData: registrationData || {}, // Store for client verification
+        calculatedAmount: amount,
+        verificationMethod: "client-side", // Indicates client-side verification flow
+        breakdown: {
+          techEvents: registrationData.selectedEvents?.length || 0,
+          workshops: registrationData.selectedWorkshops?.length || 0,
+          nonTechEvents: registrationData.selectedNonTechEvents?.length || 0,
+        },
+      });
 
     res.json({
       success: true,
@@ -271,7 +292,10 @@ router.post("/verify-payment", verifyToken, async (req, res) => {
     const isAuthentic = expectedSignature === razorpay_signature;
 
     if (!isAuthentic) {
-      console.error("Payment verification failed for order:", razorpay_order_id);
+      console.error(
+        "Payment verification failed for order:",
+        razorpay_order_id
+      );
       return res.status(400).json({
         success: false,
         error: "Invalid payment verification",
@@ -313,7 +337,12 @@ router.post("/verify-payment", verifyToken, async (req, res) => {
 
     // Check if registration already exists to prevent duplicates
     if (orderData.registrationId) {
-      console.log('Registration already exists for order:', razorpay_order_id, 'registration:', orderData.registrationId);
+      console.log(
+        "Registration already exists for order:",
+        razorpay_order_id,
+        "registration:",
+        orderData.registrationId
+      );
       return res.json({
         success: true,
         data: {
@@ -478,7 +507,9 @@ router.get("/status/:orderId", verifyToken, async (req, res) => {
     const { orderId } = req.params;
     const db = admin.firestore();
 
-    console.log(`📊 Status check for order: ${orderId} by user: ${req.user.email}`);
+    console.log(
+      `📊 Status check for order: ${orderId} by user: ${req.user.email}`
+    );
 
     const orderDoc = await db.collection("payment_orders").doc(orderId).get();
 
@@ -495,7 +526,9 @@ router.get("/status/:orderId", verifyToken, async (req, res) => {
 
     // Verify user owns this order
     if (orderData.userId !== req.user.uid) {
-      console.log(`🚫 Unauthorized access attempt for order: ${orderId} by user: ${req.user.uid}`);
+      console.log(
+        `🚫 Unauthorized access attempt for order: ${orderId} by user: ${req.user.uid}`
+      );
       return res.status(403).json({
         success: false,
         error: "Unauthorized",
@@ -539,12 +572,12 @@ router.get("/payment-warnings", (req, res) => {
         "⚠️ DO NOT close this browser tab during payment",
         "⚠️ DO NOT navigate to other pages until payment is complete",
         "⚠️ Keep this page open until you see the confirmation message",
-        "⚠️ If you close the page during payment, your registration may not be completed even if payment succeeds"
+        "⚠️ If you close the page during payment, your registration may not be completed even if payment succeeds",
       ],
       title: "Important Payment Instructions",
-      subtitle: "Please read carefully before proceeding"
+      subtitle: "Please read carefully before proceeding",
     },
-    message: "Payment warnings retrieved successfully"
+    message: "Payment warnings retrieved successfully",
   });
 });
 
@@ -553,14 +586,16 @@ router.get("/env-test", (req, res) => {
   res.json({
     success: true,
     data: {
-      nodeEnv: process.env.NODE_ENV || 'development',
+      nodeEnv: process.env.NODE_ENV || "development",
       hasRazorpayKeyId: !!process.env.RAZORPAY_KEY_ID,
-      razorpayKeyIdPrefix: process.env.RAZORPAY_KEY_ID ? process.env.RAZORPAY_KEY_ID.substring(0, 8) + '...' : 'MISSING',
+      razorpayKeyIdPrefix: process.env.RAZORPAY_KEY_ID
+        ? process.env.RAZORPAY_KEY_ID.substring(0, 8) + "..."
+        : "MISSING",
       hasRazorpaySecret: !!process.env.RAZORPAY_KEY_SECRET,
-      port: process.env.PORT || 'not set',
-      timestamp: new Date().toISOString()
+      port: process.env.PORT || "not set",
+      timestamp: new Date().toISOString(),
     },
-    message: "Environment check completed"
+    message: "Environment check completed",
   });
 });
 
@@ -632,7 +667,7 @@ router.post("/test-email", verifyToken, async (req, res) => {
     const userEmail = req.user.email;
 
     if (type === "registration") {
-      // Test registration email with sample data
+      // Test registration email with comprehensive sample data
       const sampleRegistrationData = {
         registrationId: `TEST-${Date.now()}`,
         userEmail: userEmail,
@@ -641,10 +676,16 @@ router.post("/test-email", verifyToken, async (req, res) => {
           amount: 299,
           orderId: "test_order_123",
         },
-        selectedEvents: [1, 2],
-        selectedWorkshops: [1],
-        selectedNonTechEvents: [],
-        selectedPass: null,
+        selectedEvents: [
+          { id: 1, title: "Try, If you can..?" },
+          { id: 2, title: "Reverse Code" },
+        ],
+        selectedWorkshops: [{ id: 1, title: "Blend with Blender" }],
+        selectedNonTechEvents: [
+          { id: 7, title: "Photography Contest" },
+          { id: 8, title: "Gaming Tournament" },
+        ],
+        selectedPass: 1,
         status: "confirmed",
         paymentStatus: "verified",
       };
@@ -661,6 +702,36 @@ router.post("/test-email", verifyToken, async (req, res) => {
         message: result.success
           ? "Test registration email sent successfully"
           : "Failed to send test email",
+      });
+    } else if (type === "free-registration") {
+      // Test free registration email
+      const sampleFreeRegistrationData = {
+        registrationId: `FREE-TEST-${Date.now()}`,
+        userEmail: userEmail,
+        paymentDetails: { amount: 0 }, // Free registration
+        selectedEvents: [],
+        selectedWorkshops: [],
+        selectedNonTechEvents: [
+          { id: 7, title: "Photography Contest" },
+          { id: 8, title: "Gaming Tournament" },
+        ],
+        selectedPass: null,
+        status: "confirmed",
+        paymentStatus: "not-required",
+      };
+
+      const result = await sendRegistrationConfirmationEmail(
+        sampleFreeRegistrationData,
+        events,
+        workshops
+      );
+
+      res.json({
+        success: result.success,
+        data: result,
+        message: result.success
+          ? "Test free registration email sent successfully"
+          : "Failed to send test free registration email",
       });
     } else {
       // Test simple notification email
