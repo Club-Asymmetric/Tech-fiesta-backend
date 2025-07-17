@@ -134,6 +134,10 @@ router.post("/submit", verifyToken, async (req, res) => {
                     (formData.selectedWorkshops?.length || 0) + 
                     (formData.selectedNonTechEvents?.length || 0),
         
+        // Pass information
+        ispass: !!formData.selectedPass, // Boolean indicating if user selected a pass
+        selectedPassId: formData.selectedPass || null, // Store the pass ID if selected
+        
         // Admin tracking fields
         arrivalStatus: {
           hasArrived: false,
