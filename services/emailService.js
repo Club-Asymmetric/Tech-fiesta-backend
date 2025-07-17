@@ -1,8 +1,5 @@
 const nodemailer = require("nodemailer");
 
-console.log(`🚀 Email Service Module Loaded`);
-console.log(`📅 Service initialized at: ${new Date().toLocaleString()}`);
-
 // Email configuration with rotation
 const emailConfigs = [
   {
@@ -42,59 +39,33 @@ const emailConfigs = [
   },
 ];
 
-// Log initial email configuration status
-console.log(`📧 Email Configuration Status:`);
-emailConfigs.forEach((config, index) => {
-  const status = {
-    index: index + 1,
-    email: config.email
-      ? config.email.replace(/(.{3}).*(@.*)/, "$1***$2")
-      : "Not configured",
-    hasPassword: !!config.password,
-    isConfigured: !!(config.email && config.password),
-  };
-  console.log(`  Email ${index + 1}:`, status);
-});
-
-const configuredEmails = emailConfigs.filter(
-  (config) => config.email && config.password
-).length;
-console.log(
-  `✅ ${configuredEmails}/${emailConfigs.length} email accounts configured`
-);
-
+// Current email index for rotation
 let currentEmailIndex = 0;
 
 // Reset usage counters daily
 const resetUsageCounters = () => {
-  console.log(`🔄 Daily email usage counter reset initiated`);
-  console.log(`📊 Previous usage stats:`);
-  emailConfigs.forEach((config, index) => {
-    console.log(
-      `  Email ${index + 1}: ${config.currentUsage}/${config.dailyLimit} (${
-        config.email
-          ? config.email.replace(/(.{3}).*(@.*)/, "$1***$2")
-          : "Not configured"
-      })`
-    );
+  emailConfigs.forEach((config) => {
     config.currentUsage = 0;
   });
-  console.log(`✅ All email usage counters reset to 0`);
-  console.log(
-    `📅 Next reset scheduled for: ${new Date(
-      Date.now() + 24 * 60 * 60 * 1000
-    ).toLocaleString()}`
-  );
+  console.log("📧 Email usage counters reset for the day");
 };
 
-// Schedule daily reset at midnight
-console.log(`⏰ Scheduling daily email usage reset every 24 hours`);
-console.log(
-  `📅 First reset scheduled for: ${new Date(
-    Date.now() + 24 * 60 * 60 * 1000
-  ).toLocaleString()}`
-);
+// Reset usage counters at midnight
 setInterval(resetUsageCounters, 24 * 60 * 60 * 1000);
+
+// Get email service status
+const getEmailServiceStatus = () => {
+  return emailConfigs.map((config, index) => ({
+    index: index + 1,
+    email: config.email
+      ? config.email.replace(/(.{3}).*(@.*)/, "$1***$2")
+      : "Not configured",
+    isConfigured: !!(config.email && config.password),
+    currentUsage: config.currentUsage,
+    dailyLimit: config.dailyLimit,
+    isActive: config.currentUsage < config.dailyLimit,
+  }));
+};
 
 // Get next available email configuration
 const getAvailableEmailConfig = () => {
@@ -122,34 +93,21 @@ const getAvailableEmailConfig = () => {
       config.password &&
       config.currentUsage < config.dailyLimit
     ) {
-      currentEmailIndex = (currentEmailIndex + i) % emailConfigs.length;
-      console.log(
-        `✅ Selected email config ${currentEmailIndex + 1} for sending`
-      );
+      console.log(`✅ Found available email config: ${configIndex + 1}`);
       return config;
     }
   }
 
-  // If all emails are at limit, use the first one anyway (will handle error gracefully)
-  console.warn("⚠️ All email accounts have reached their daily limit");
-  const fallbackConfig =
-    emailConfigs.find((config) => config.email && config.password) ||
-    emailConfigs[0];
-  console.log(`🔄 Using fallback email config:`, {
-    email: fallbackConfig.email
-      ? fallbackConfig.email.replace(/(.{3}).*(@.*)/, "$1***$2")
-      : "Not configured",
-    hasPassword: !!fallbackConfig.password,
-    currentUsage: fallbackConfig.currentUsage,
-    dailyLimit: fallbackConfig.dailyLimit,
-  });
-  return fallbackConfig;
+  console.log(
+    "⚠️ No email config with available quota found, using first config"
+  );
+  return emailConfigs[0]; // Fallback to first config
 };
 
 // Create transporter for the selected email
 const createTransporter = (config) => {
   console.log(
-    `🚀 Creating transporter for email: ${
+    `🔧 Creating transporter for: ${
       config.email
         ? config.email.replace(/(.{3}).*(@.*)/, "$1***$2")
         : "Not configured"
@@ -182,21 +140,58 @@ const generateRegistrationEmailTemplate = (
   const { registrationId, userEmail, paymentDetails, selectedPass } =
     registrationData;
 
-  // Get event details
-  const selectedEventDetails = events
-    ? events.filter((event) =>
-        registrationData.selectedEvents?.includes(event.id)
-      )
-    : [];
+  // Get event details for tech events
+  const selectedEventDetails = [];
+  if (
+    registrationData.selectedEvents &&
+    registrationData.selectedEvents.length > 0
+  ) {
+    registrationData.selectedEvents.forEach((selectedEvent) => {
+      // Handle both {id, title} format and just id format
+      const eventId = selectedEvent.id || selectedEvent;
+      const event = events.find((e) => e.id === eventId && e.type === "tech");
+      if (event) {
+        selectedEventDetails.push(event);
+      }
+    });
+  }
 
   // Get workshop details
-  const selectedWorkshopDetails = workshops
-    ? workshops.filter((workshop) =>
-        registrationData.selectedWorkshops?.includes(workshop.id)
-      )
-    : [];
+  const selectedWorkshopDetails = [];
+  if (
+    registrationData.selectedWorkshops &&
+    registrationData.selectedWorkshops.length > 0
+  ) {
+    registrationData.selectedWorkshops.forEach((selectedWorkshop) => {
+      // Handle both {id, title} format and just id format
+      const workshopId = selectedWorkshop.id || selectedWorkshop;
+      const workshop = workshops.find((w) => w.id === workshopId);
+      if (workshop) {
+        selectedWorkshopDetails.push(workshop);
+      }
+    });
+  }
+
+  // Get non-tech event details
+  const selectedNonTechEventDetails = [];
+  if (
+    registrationData.selectedNonTechEvents &&
+    registrationData.selectedNonTechEvents.length > 0
+  ) {
+    registrationData.selectedNonTechEvents.forEach((selectedEvent) => {
+      // Handle both {id, title} format and just id format
+      const eventId = selectedEvent.id || selectedEvent;
+      const event = events.find(
+        (e) => e.id === eventId && e.type === "non-tech"
+      );
+      if (event) {
+        selectedNonTechEventDetails.push(event);
+      }
+    });
+  }
 
   const isCIT = userEmail && userEmail.endsWith("@citchennai.net");
+  const isFreRegistration = !paymentDetails || paymentDetails.amount === 0;
 
   return `
 <!DOCTYPE html>
@@ -209,11 +204,13 @@ const generateRegistrationEmailTemplate = (
         .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
         .registration-details { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea; }
         .event-list { background: white; padding: 20px; border-radius: 8px; margin: 10px 0; }
-        .event-item { padding: 10px; border-bottom: 1px solid #eee; }
+        .event-item { padding: 15px; border-bottom: 1px solid #eee; }
         .event-item:last-child { border-bottom: none; }
         .amount { font-size: 24px; font-weight: bold; color: #667eea; }
         .footer { text-align: center; padding: 20px; color: #666; font-size: 14px; }
-        .qr-info { background: #e8f4f8; padding: 15px; border-radius: 8px; margin: 15px 0; }
+        .event-details { background: #f8f9fa; padding: 10px; border-radius: 5px; margin-top: 8px; }
+        .pass-info { background: #e8f5e8; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #28a745; }
+        .free-registration { background: #e8f4f8; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #17a2b8; }
     </style>
 </head>
 <body>
@@ -221,30 +218,149 @@ const generateRegistrationEmailTemplate = (
         <div class="header">
             <h1>🎉 Registration Confirmed!</h1>
             <h2>Tech Fiesta 2025</h2>
+            <p>Chennai Institute of Technology</p>
         </div>
         
         <div class="content">
             <div class="registration-details">
-                <h3>Registration Details</h3>
+                <h3>📋 Registration Details</h3>
                 <p><strong>Registration ID:</strong> ${registrationId}</p>
-                <p><strong>Email:</strong> ${userEmail}</p>
-                <p><strong>Student Type:</strong> ${
-                  isCIT ? "CIT Student" : "Regular Student"
+                <p><strong>Participant Name:</strong> ${
+                  registrationData.userDetails?.name ||
+                  registrationData.name ||
+                  "Not provided"
                 }</p>
+                <p><strong>Email:</strong> ${userEmail}</p>
+                <p><strong>College:</strong> ${
+                  registrationData.userDetails?.college ||
+                  registrationData.college ||
+                  "Not provided"
+                }</p>
+                <p><strong>Department:</strong> ${
+                  registrationData.userDetails?.department ||
+                  registrationData.department ||
+                  "Not provided"
+                }</p>
+                <p><strong>Year of Study:</strong> ${
+                  registrationData.userDetails?.year ||
+                  registrationData.year ||
+                  "Not provided"
+                }</p>
+                <p><strong>WhatsApp:</strong> ${
+                  registrationData.userDetails?.whatsapp ||
+                  registrationData.whatsapp ||
+                  "Not provided"
+                }</p>
+                <p><strong>Student Type:</strong> ${
+                  isCIT ? "CIT Student" : "External Student"
+                }</p>
+                ${
+                  !isFreRegistration
+                    ? `
                 <p><strong>Payment ID:</strong> ${paymentDetails.paymentId}</p>
-                <p><strong>Amount Paid:</strong> <span class="amount">₹${
-                  paymentDetails.amount
-                }</span></p>
+                <p><strong>Amount Paid:</strong> <span class="amount">₹${paymentDetails.amount}</span></p>
                 <p><strong>Payment Status:</strong> ✅ Verified</p>
+                `
+                    : `
+                <div class="free-registration">
+                    <p><strong>Registration Type:</strong> ✅ Free Registration</p>
+                    <p><em>No payment required for your selected events</em></p>
+                </div>
+                `
+                }
             </div>
+
+            ${
+              (registrationData.teamDetails?.isTeamEvent ||
+                registrationData.isTeamEvent) &&
+              (registrationData.teamDetails?.teamMembers ||
+                registrationData.teamMembers) &&
+              (
+                registrationData.teamDetails?.teamMembers ||
+                registrationData.teamMembers
+              ).length > 0
+                ? `
+            <div class="registration-details">
+                <h3>👥 Team Details</h3>
+                <p><strong>Team Leader:</strong> ${
+                  registrationData.userDetails?.name ||
+                  registrationData.name ||
+                  "Not provided"
+                }</p>
+                <p><strong>Team Size:</strong> ${
+                  registrationData.teamDetails?.teamSize ||
+                  registrationData.teamSize ||
+                  (
+                    registrationData.teamDetails?.teamMembers ||
+                    registrationData.teamMembers
+                  ).length + 1
+                } members</p>
+                <div class="event-details">
+                    <h4>Team Members:</h4>
+                    ${(
+                      registrationData.teamDetails?.teamMembers ||
+                      registrationData.teamMembers
+                    )
+                      .map(
+                        (member, index) => `
+                        <div style="margin-bottom: 10px; padding: 8px; border-left: 3px solid #667eea;">
+                            <strong>Member ${index + 2}:</strong> ${
+                          member.name || "Not provided"
+                        }<br>
+                            <small>📧 ${member.email || "Not provided"} | 📱 ${
+                          member.whatsapp || "Not provided"
+                        }</small><br>
+                            <small>🏛️ ${
+                              member.department || "Not provided"
+                            } | 📚 ${member.year || "Not provided"}</small>
+                        </div>
+                    `
+                      )
+                      .join("")}
+                </div>
+            </div>
+            `
+                : ""
+            }
 
             ${
               selectedPass
                 ? `
-            <div class="event-list">
+            <div class="pass-info">
                 <h3>🎫 Selected Pass</h3>
                 <div class="event-item">
-                    <strong>Pass ID:</strong> ${selectedPass}
+                    <strong>Tech Fiesta General Pass</strong><br>
+                    <div class="event-details">
+                        <p>✅ Unlimited access to ALL technical events</p>
+                        <p>✅ 1 workshop included + up to 4 additional workshops</p>
+                        <p>✅ Priority seating and exclusive merchandise</p>
+                        <p><strong>Pass ID:</strong> ${selectedPass}</p>
+                    </div>
+                </div>
+            </div>
+            `
+                : ""
+            }
+
+            ${
+              !selectedPass &&
+              selectedEventDetails.length === 0 &&
+              selectedWorkshopDetails.length === 0 &&
+              selectedNonTechEventDetails.length === 0
+                ? `
+            <div class="event-list">
+                <h3>🎪 Welcome to Tech Fiesta 2025!</h3>
+                <div class="event-item" style="background: #e8f4fd; border-left: 4px solid #2196f3;">
+                    <p style="margin: 0; color: #1976d2;">
+                        <strong>🎉 Your registration is complete!</strong><br><br>
+                        You can still participate in events by:
+                    </p>
+                    <div class="event-details">
+                        <p>🎯 <strong>Walk-in Registration:</strong> Available at the venue for most events</p>
+                        <p>🎨 <strong>Non-Tech Events:</strong> Register and pay at the venue on event day</p>
+                        <p>🎫 <strong>General Pass:</strong> Purchase at the venue for unlimited access to all tech events</p>
+                        <p>📱 <strong>Mobile Registration:</strong> Use our website to add more events anytime</p>
+                    </div>
                 </div>
             </div>
             `
@@ -255,13 +371,27 @@ const generateRegistrationEmailTemplate = (
               selectedEventDetails.length > 0
                 ? `
             <div class="event-list">
-                <h3>🎯 Registered Tech Events</h3>
+                <h3>🎯 Technical Events Registered</h3>
                 ${selectedEventDetails
                   .map(
                     (event) => `
                 <div class="event-item">
-                    <strong>${event.title}</strong><br>
-                    <small>📅 ${event.date} | 🕒 ${event.time} | 📍 ${event.venue}</small>
+                    <strong>${event.title}</strong>
+                    <div class="event-details">
+                        <p>📅 <strong>Date:</strong> ${event.date}</p>
+                        <p>🕒 <strong>Time:</strong> ${event.time}</p>
+                        <p>📍 <strong>Venue:</strong> ${event.venue}</p>
+                        <p>📝 <strong>Description:</strong> ${
+                          event.description
+                        }</p>
+                        ${
+                          event.speakers
+                            ? `<p>👨‍🏫 <strong>Speakers:</strong> ${event.speakers.join(
+                                ", "
+                              )}</p>`
+                            : ""
+                        }
+                    </div>
                 </div>
                 `
                   )
@@ -275,13 +405,21 @@ const generateRegistrationEmailTemplate = (
               selectedWorkshopDetails.length > 0
                 ? `
             <div class="event-list">
-                <h3>🛠️ Registered Workshops</h3>
+                <h3>🛠️ Workshops Registered</h3>
                 ${selectedWorkshopDetails
                   .map(
                     (workshop) => `
                 <div class="event-item">
-                    <strong>${workshop.title}</strong><br>
-                    <small>📅 ${workshop.date} | 🕒 ${workshop.time} | 📍 ${workshop.venue}</small>
+                    <strong>${workshop.title}</strong>
+                    <div class="event-details">
+                        <p>📅 <strong>Date:</strong> ${workshop.date}</p>
+                        <p>🕒 <strong>Time:</strong> ${workshop.time}</p>
+                        <p>📍 <strong>Venue:</strong> ${workshop.venue}</p>
+                        <p>📝 <strong>Description:</strong> ${workshop.description}</p>
+                        <p>👨‍🏫 <strong>Instructor:</strong> ${workshop.instructor}</p>
+                        <p>⏱️ <strong>Duration:</strong> ${workshop.duration}</p>
+                        <p>📊 <strong>Level:</strong> ${workshop.level}</p>
+                    </div>
                 </div>
                 `
                   )
@@ -292,16 +430,25 @@ const generateRegistrationEmailTemplate = (
             }
 
             ${
-              registrationData.selectedNonTechEvents?.length > 0
+              selectedNonTechEventDetails.length > 0
                 ? `
             <div class="event-list">
-                <h3>🎨 Non-Tech Events (Pay on Arrival)</h3>
-                ${registrationData.selectedNonTechEvents
+                <h3>🎨 Non-Technical Events Registered</h3>
+                <p style="background: #fff3cd; padding: 10px; border-radius: 5px; color: #856404; margin-bottom: 15px;">
+                    <strong>📢 Important:</strong> Payment for non-technical events is required at the venue on the day of the event.
+                </p>
+                ${selectedNonTechEventDetails
                   .map(
-                    (eventId) => `
+                    (event) => `
                 <div class="event-item">
-                    <strong>Event ID:</strong> ${eventId}<br>
-                    <small>💰 Payment required at venue</small>
+                    <strong>${event.title}</strong>
+                    <div class="event-details">
+                        <p>📅 <strong>Date:</strong> ${event.date}</p>
+                        <p>🕒 <strong>Time:</strong> ${event.time}</p>
+                        <p>📍 <strong>Venue:</strong> ${event.venue}</p>
+                        <p>📝 <strong>Description:</strong> ${event.description}</p>
+                        <p>💰 <strong>Payment:</strong> At venue on arrival</p>
+                    </div>
                 </div>
                 `
                   )
@@ -311,28 +458,30 @@ const generateRegistrationEmailTemplate = (
                 : ""
             }
 
-            <div class="qr-info">
-                <h3>📱 QR Codes</h3>
-                <p>QR codes for your registered events will be available in your dashboard. Please bring them to the respective events for quick check-in.</p>
-                <p><strong>Dashboard Link:</strong> <a href="${
-                  process.env.FRONTEND_URL || "https://techfiesta2025.com"
-                }/dashboard">View Dashboard</a></p>
-            </div>
-
             <div class="registration-details">
                 <h3>📋 Important Instructions</h3>
                 <ul>
-                    <li>Save this email for your records</li>
-                    <li>Bring a valid ID card to all events</li>
-                    <li>QR codes are required for event entry</li>
-                    <li>Non-tech events require payment at the venue</li>
-                    <li>Follow event-specific guidelines</li>
+                    <li><strong>Save this email</strong> for your records - you'll need it for event entry</li>
+                    <li><strong>Bring a valid ID card</strong> to all events for verification</li>
+                    <li><strong>Arrive 15 minutes early</strong> to all registered events</li>
+                    <li><strong>Non-tech events</strong> require payment at the venue before participation</li>
+                    <li><strong>Follow event-specific guidelines</strong> that will be shared at the venue</li>
+                    <li><strong>Contact support</strong> if you have any questions about your registration</li>
                 </ul>
+            </div>
+
+            <div class="registration-details">
+                <h3>📞 Contact Information</h3>
+                <p><strong>Email:</strong> Asymmetric@citchennai.net</p>
+                <p><strong>Event Queries:</strong> Contact event coordinators at the venue</p>
+                <p><strong>Registration Support:</strong> Show this email and your ID at registration desk</p>
             </div>
         </div>
         
         <div class="footer">
-            <p>For any queries, contact us at techfiesta@citchennai.net</p>
+            <p>Thank you for registering for Tech Fiesta 2025!</p>
+            <p><strong>Chennai Institute of Technology</strong></p>
+            <p>For any queries, contact us at <a href="mailto:Asymmetric@citchennai.net">Asymmetric@citchennai.net</a></p>
             <p>© 2025 Tech Fiesta - Chennai Institute of Technology</p>
         </div>
     </div>
@@ -350,7 +499,9 @@ const sendRegistrationConfirmationEmail = async (
   console.log(`📨 Starting registration confirmation email process`);
   console.log(`📧 Recipient: ${registrationData.userEmail}`);
   console.log(`🆔 Registration ID: ${registrationData.registrationId}`);
-  console.log(`💰 Payment Amount: ₹${registrationData.paymentDetails.amount}`);
+  console.log(
+    `💰 Payment Amount: ₹${registrationData.paymentDetails?.amount || 0}`
+  );
 
   try {
     const emailConfig = getAvailableEmailConfig();
@@ -390,13 +541,15 @@ Tech Fiesta 2025 - Registration Confirmed
 
 Registration ID: ${registrationData.registrationId}
 Email: ${registrationData.userEmail}
-Amount Paid: ₹${registrationData.paymentDetails.amount}
-Payment ID: ${registrationData.paymentDetails.paymentId}
+Amount Paid: ₹${registrationData.paymentDetails?.amount || 0}
+Payment ID: ${
+        registrationData.paymentDetails?.paymentId || "N/A (Free Registration)"
+      }
 
 Your registration has been confirmed successfully!
-Visit your dashboard for QR codes and more details.
+Please save this email for your records and bring it to events for verification.
 
-For queries, contact: techfiesta@citchennai.net
+For queries, contact: Asymmetric@citchennai.net
       `,
     };
 
@@ -514,12 +667,6 @@ const sendNotificationEmail = async (to, subject, htmlContent, textContent) => {
     console.log(`✅ Notification email sent successfully!`);
     console.log(`📧 Sent to: ${to}`);
     console.log(`🆔 Message ID: ${info.messageId}`);
-    console.log(`📊 Email usage stats:`, {
-      usedEmail: emailConfig.email.replace(/(.{3}).*(@.*)/, "$1***$2"),
-      currentUsage: emailConfig.currentUsage,
-      dailyLimit: emailConfig.dailyLimit,
-      nextEmailIndex: currentEmailIndex,
-    });
 
     return {
       success: true,
@@ -528,54 +675,21 @@ const sendNotificationEmail = async (to, subject, htmlContent, textContent) => {
     };
   } catch (error) {
     console.error("❌ Error sending notification email:", error);
-    console.error("Error details:", {
+    return {
+      success: false,
+      error: error.message,
       code: error.code,
-      message: error.message,
-      stack: error.stack,
-    });
-    return { success: false, error: error.message };
+    };
   }
 };
 
-// Get email service status
-const getEmailServiceStatus = () => {
-  console.log(`📊 Email service status requested`);
-  const status = emailConfigs.map((config, index) => ({
-    index: index + 1,
-    email: config.email
-      ? config.email.replace(/(.{3}).*(@.*)/, "$1***$2")
-      : "Not configured",
-    isConfigured: !!(config.email && config.password),
-    currentUsage: config.currentUsage,
-    dailyLimit: config.dailyLimit,
-    isActive: index === currentEmailIndex,
-  }));
-
-  console.log(`📈 Current email service status:`, status);
-  console.log(`🎯 Active email index: ${currentEmailIndex + 1}`);
-
-  return status;
-};
-
-// Test email connectivity for all configured accounts
+// Test email connectivity
 const testEmailConnectivity = async () => {
-  console.log(`🔧 Testing email connectivity for all configured accounts...`);
+  console.log(`🧪 Testing email connectivity for all configurations...`);
   const results = [];
 
   for (let i = 0; i < emailConfigs.length; i++) {
     const config = emailConfigs[i];
-
-    if (!config.email || !config.password) {
-      console.log(`⚠️ Email ${i + 1}: Not configured`);
-      results.push({
-        index: i + 1,
-        email: "Not configured",
-        status: "skipped",
-        error: "Missing email or password",
-      });
-      continue;
-    }
-
     console.log(
       `🔍 Testing email ${i + 1}: ${config.email.replace(
         /(.{3}).*(@.*)/,
@@ -620,12 +734,44 @@ const logEmailTemplateInfo = (registrationData, events, workshops) => {
   console.log(`  Registration ID: ${registrationData.registrationId}`);
   console.log(`  User Email: ${registrationData.userEmail}`);
   console.log(
+    `  User Name: ${
+      registrationData.userDetails?.name ||
+      registrationData.name ||
+      "Not provided"
+    }`
+  );
+  console.log(
+    `  User College: ${
+      registrationData.userDetails?.college ||
+      registrationData.college ||
+      "Not provided"
+    }`
+  );
+  console.log(
+    `  User Department: ${
+      registrationData.userDetails?.department ||
+      registrationData.department ||
+      "Not provided"
+    }`
+  );
+  console.log(
+    `  User WhatsApp: ${
+      registrationData.userDetails?.whatsapp ||
+      registrationData.whatsapp ||
+      "Not provided"
+    }`
+  );
+  console.log(
     `  Is CIT Student: ${registrationData.userEmail?.endsWith(
       "@citchennai.net"
     )}`
   );
-  console.log(`  Payment Amount: ₹${registrationData.paymentDetails?.amount}`);
-  console.log(`  Payment ID: ${registrationData.paymentDetails?.paymentId}`);
+  console.log(
+    `  Payment Amount: ₹${registrationData.paymentDetails?.amount || 0}`
+  );
+  console.log(
+    `  Payment ID: ${registrationData.paymentDetails?.paymentId || "N/A"}`
+  );
   console.log(`  Selected Pass: ${registrationData.selectedPass || "None"}`);
   console.log(
     `  Selected Events: ${registrationData.selectedEvents?.length || 0} events`

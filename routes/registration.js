@@ -2,6 +2,11 @@ const express = require("express");
 const router = express.Router();
 const admin = require("firebase-admin");
 const { v4: uuidv4 } = require("uuid");
+const {
+  sendRegistrationConfirmationEmail,
+} = require("../services/emailService");
+const { events } = require("../data/events");
+const { workshops } = require("../data/workshops");
 
 // Middleware to verify Firebase ID token
 const verifyToken = async (req, res, next) => {
@@ -113,12 +118,69 @@ router.post("/submit", verifyToken, async (req, res) => {
     }
 
     // Calculate total amount based on selected events/workshops
-    const totalAmount = 0; // For free registrations
+    let totalAmount = 0;
+    const isCIT = req.user.email && req.user.email.endsWith("@citchennai.net");
 
+    // Calculate cost for tech events (if no pass selected)
+    if (!formData.selectedPass && formData.selectedEvents) {
+      formData.selectedEvents.forEach((selectedEvent) => {
+        const event = events.find((e) => e.id === selectedEvent.id);
+        if (event && event.price) {
+          const price = isCIT && event.citPrice ? event.citPrice : event.price;
+          totalAmount += parseInt(price.replace("₹", ""));
+        }
+      });
+    }
+
+    // Calculate cost for workshops (if no pass selected)
+    if (!formData.selectedPass && formData.selectedWorkshops) {
+      const workshopsData = require("../data/workshops").workshops;
+      formData.selectedWorkshops.forEach((selectedWorkshop) => {
+        const workshop = workshopsData.find(
+          (w) => w.id === selectedWorkshop.id
+        );
+        if (workshop && workshop.price) {
+          const price =
+            isCIT && workshop.citPrice ? workshop.citPrice : workshop.price;
+          totalAmount += parseInt(price.replace("₹", ""));
+        }
+      });
+    }
+
+    // Add pass cost if selected
+    if (formData.selectedPass) {
+      const { getPassById } = require("../data/passes");
+      const pass = getPassById(formData.selectedPass);
+      if (pass) {
+        const passPrice = isCIT ? pass.citPrice : pass.price;
+        totalAmount += parseInt(passPrice.replace("₹", ""));
+      }
+    }
+
+    // Non-tech events are always free to register (paid on arrival)
+    // So they don't add to totalAmount
+
+    console.log(
+      `💰 Calculated total amount: ₹${totalAmount} for user ${userEmail}`
+    );
+    console.log(`📊 Registration details:`, {
+      selectedEvents: formData.selectedEvents?.length || 0,
+      selectedWorkshops: formData.selectedWorkshops?.length || 0,
+      selectedNonTechEvents: formData.selectedNonTechEvents?.length || 0,
+      selectedPass: formData.selectedPass || null,
+      isCIT,
+    });
+
+    // Always send confirmation email regardless of amount
+    // Free registrations (totalAmount = 0) are confirmed immediately
+    // Paid registrations will need payment processing
     if (totalAmount === 0) {
       // Free registration - create record directly
-      const registrationId = `TF2025-${require('uuid').v4().substr(0, 8).toUpperCase()}`;
-      
+      const registrationId = `TF2025-${require("uuid")
+        .v4()
+        .substr(0, 8)
+        .toUpperCase()}`;
+
       // Create registration record
       const db = admin.firestore();
       const registrationData = {
@@ -196,33 +258,89 @@ router.post("/submit", verifyToken, async (req, res) => {
           accessibility: ""
         }
       };
-      
+
       await db.collection("registrations").add(registrationData);
-      
-      console.log(`Free registration completed: ${registrationId} for user ${userEmail}`);
-      
+
+      console.log(
+        `Free registration completed: ${registrationId} for user ${userEmail}`
+      );
+
+      // Send confirmation email for free registration
+      try {
+        const emailData = {
+          registrationId,
+          userEmail: req.user.email,
+          userName: formData.name,
+          userDetails: {
+            name: formData.name,
+            email: formData.email,
+            whatsapp: formData.whatsapp,
+            college: formData.college,
+            department: formData.department,
+            year: formData.year,
+          },
+          teamDetails: formData.isTeamEvent
+            ? {
+                isTeamEvent: formData.isTeamEvent,
+                teamSize: formData.teamSize,
+                teamMembers: formData.teamMembers || [],
+              }
+            : null,
+          paymentDetails: { amount: 0 }, // Free registration
+          selectedPass: formData.selectedPass,
+          selectedEvents: formData.selectedEvents || [],
+          selectedWorkshops: formData.selectedWorkshops || [],
+          selectedNonTechEvents: formData.selectedNonTechEvents || [],
+        };
+
+        console.log(
+          `📧 Sending confirmation email for free registration: ${registrationId}`
+        );
+        const emailResult = await sendRegistrationConfirmationEmail(
+          emailData,
+          events,
+          workshops
+        );
+
+        if (emailResult.success) {
+          console.log(
+            `✅ Free registration email sent successfully to ${req.user.email}`
+          );
+        } else {
+          console.error(
+            `❌ Failed to send free registration email:`,
+            emailResult.error
+          );
+        }
+      } catch (emailError) {
+        console.error(`❌ Error sending free registration email:`, emailError);
+        // Don't fail the registration if email fails
+      }
+
       return res.json({
         success: true,
         data: {
           registrationId,
           status: "confirmed",
-          eventCount: registrationData.eventCount
+          eventCount: registrationData.eventCount,
         },
-        message: "Registration completed successfully"
+        message: "Registration completed successfully",
+      });
+    } else {
+      // For paid registrations - redirect to payment processing
+      console.log(`💳 Payment required: ₹${totalAmount} for user ${userEmail}`);
+
+      return res.json({
+        success: true,
+        data: {
+          requiresPayment: true,
+          amount: totalAmount,
+          currency: "INR",
+          registrationData: formData,
+        },
+        message: "Please complete payment to finalize registration",
       });
     }
-
-    // For paid registrations (not currently in use since totalAmount is always 0)
-    res.json({
-      success: true,
-      data: {
-        requiresPayment: true,
-        amount: totalAmount,
-        currency: "INR",
-        message: "Payment required to complete registration",
-      },
-      message: "Please complete payment to finalize registration",
-    });
   } catch (error) {
     console.error("Error processing registration:", error);
     res.status(500).json({
