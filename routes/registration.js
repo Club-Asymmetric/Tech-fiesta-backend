@@ -192,10 +192,71 @@ router.post("/submit", verifyToken, async (req, res) => {
         paymentStatus: "not-required",
         createdAt: admin.firestore.Timestamp.now(),
         updatedAt: admin.firestore.Timestamp.now(),
-        eventCount:
-          (formData.selectedEvents?.length || 0) +
-          (formData.selectedWorkshops?.length || 0) +
-          (formData.selectedNonTechEvents?.length || 0),
+        eventCount: (formData.selectedEvents?.length || 0) + 
+                    (formData.selectedWorkshops?.length || 0) + 
+                    (formData.selectedNonTechEvents?.length || 0),
+        
+        // Admin tracking fields
+        arrivalStatus: {
+          hasArrived: false,
+          arrivalTime: null,
+          checkedInBy: null,
+          notes: ""
+        },
+        
+        // Workshop details for pass holders
+        workshopDetails: {
+          selectedWorkshop: formData.selectedPass ? (formData.selectedWorkshops?.[0]?.id || null) : null,
+          workshopTitle: formData.selectedPass ? (formData.selectedWorkshops?.[0]?.title || "") : "",
+          canEditWorkshop: !!formData.selectedPass, // Can edit if they have a pass
+          workshopAttended: false,
+          workshopAttendanceTime: null
+        },
+        
+        // Event attendance tracking
+        eventAttendance: {
+          techEvents: (formData.selectedEvents || []).map(event => ({
+            eventId: event.id,
+            eventTitle: event.title,
+            attended: false,
+            attendanceTime: null,
+            notes: ""
+          })),
+          workshops: (formData.selectedWorkshops || []).map(workshop => ({
+            workshopId: workshop.id,
+            workshopTitle: workshop.title,
+            attended: false,
+            attendanceTime: null,
+            notes: ""
+          })),
+          nonTechEvents: (formData.selectedNonTechEvents || []).map(event => ({
+            eventId: event.id,
+            eventTitle: event.title,
+            attended: false,
+            attendanceTime: null,
+            paidOnArrival: false,
+            amountPaid: 0,
+            notes: ""
+          }))
+        },
+        
+        // Admin notes and flags
+        adminNotes: {
+          generalNotes: "",
+          specialRequirements: "",
+          flagged: false,
+          flagReason: "",
+          lastModifiedBy: null,
+          lastModifiedAt: null
+        },
+        
+        // Contact and emergency details
+        contactDetails: {
+          emergencyContact: "",
+          emergencyPhone: "",
+          dietaryRestrictions: "",
+          accessibility: ""
+        }
       };
 
       await db.collection("registrations").add(registrationData);
@@ -315,6 +376,236 @@ router.get("/my-registrations", verifyToken, async (req, res) => {
     });
   } catch (error) {
     console.error("Error getting user registrations:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to retrieve registrations",
+      message: error.message,
+    });
+  }
+});
+
+// Admin endpoint to update arrival status
+router.put("/admin/arrival/:registrationId", verifyToken, async (req, res) => {
+  try {
+    const { registrationId } = req.params;
+    const { hasArrived, notes, checkedInBy } = req.body;
+
+    const db = admin.firestore();
+    const registrationsRef = db.collection("registrations");
+    
+    // Find registration by registrationId
+    const query = registrationsRef.where("registrationId", "==", registrationId);
+    const snapshot = await query.get();
+
+    if (snapshot.empty) {
+      return res.status(404).json({
+        success: false,
+        error: "Registration not found",
+        message: "No registration found with the provided ID",
+      });
+    }
+
+    const docRef = snapshot.docs[0].ref;
+    const updateData = {
+      "arrivalStatus.hasArrived": hasArrived,
+      "arrivalStatus.notes": notes || "",
+      "arrivalStatus.checkedInBy": checkedInBy || req.user.email,
+      "arrivalStatus.arrivalTime": hasArrived ? admin.firestore.Timestamp.now() : null,
+      updatedAt: admin.firestore.Timestamp.now(),
+    };
+
+    await docRef.update(updateData);
+
+    res.json({
+      success: true,
+      data: { registrationId, hasArrived, notes },
+      message: "Arrival status updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating arrival status:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to update arrival status",
+      message: error.message,
+    });
+  }
+});
+
+// Admin endpoint to update workshop selection
+router.put("/admin/workshop/:registrationId", verifyToken, async (req, res) => {
+  try {
+    const { registrationId } = req.params;
+    const { selectedWorkshop, workshopTitle } = req.body;
+
+    const db = admin.firestore();
+    const registrationsRef = db.collection("registrations");
+    
+    const query = registrationsRef.where("registrationId", "==", registrationId);
+    const snapshot = await query.get();
+
+    if (snapshot.empty) {
+      return res.status(404).json({
+        success: false,
+        error: "Registration not found",
+        message: "No registration found with the provided ID",
+      });
+    }
+
+    const docRef = snapshot.docs[0].ref;
+    const updateData = {
+      "workshopDetails.selectedWorkshop": selectedWorkshop,
+      "workshopDetails.workshopTitle": workshopTitle || "",
+      updatedAt: admin.firestore.Timestamp.now(),
+    };
+
+    await docRef.update(updateData);
+
+    res.json({
+      success: true,
+      data: { registrationId, selectedWorkshop, workshopTitle },
+      message: "Workshop selection updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating workshop selection:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to update workshop selection",
+      message: error.message,
+    });
+  }
+});
+
+// Admin endpoint to update event attendance
+router.put("/admin/attendance/:registrationId", verifyToken, async (req, res) => {
+  try {
+    const { registrationId } = req.params;
+    const { eventType, eventId, attended, notes, paidOnArrival, amountPaid } = req.body;
+
+    const db = admin.firestore();
+    const registrationsRef = db.collection("registrations");
+    
+    const query = registrationsRef.where("registrationId", "==", registrationId);
+    const snapshot = await query.get();
+
+    if (snapshot.empty) {
+      return res.status(404).json({
+        success: false,
+        error: "Registration not found",
+        message: "No registration found with the provided ID",
+      });
+    }
+
+    const doc = snapshot.docs[0];
+    const docRef = doc.ref;
+    const data = doc.data();
+
+    // Update the specific event attendance
+    const eventAttendance = data.eventAttendance || {};
+    const eventTypeArray = eventAttendance[eventType] || [];
+    
+    const eventIndex = eventTypeArray.findIndex(e => e.eventId === eventId);
+    if (eventIndex !== -1) {
+      eventTypeArray[eventIndex] = {
+        ...eventTypeArray[eventIndex],
+        attended,
+        attendanceTime: attended ? admin.firestore.Timestamp.now() : null,
+        notes: notes || "",
+        ...(eventType === 'nonTechEvents' && { paidOnArrival, amountPaid: amountPaid || 0 })
+      };
+
+      const updateData = {
+        [`eventAttendance.${eventType}`]: eventTypeArray,
+        updatedAt: admin.firestore.Timestamp.now(),
+      };
+
+      await docRef.update(updateData);
+    }
+
+    res.json({
+      success: true,
+      data: { registrationId, eventType, eventId, attended },
+      message: "Event attendance updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating event attendance:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to update event attendance",
+      message: error.message,
+    });
+  }
+});
+
+// Admin endpoint to update notes and flags
+router.put("/admin/notes/:registrationId", verifyToken, async (req, res) => {
+  try {
+    const { registrationId } = req.params;
+    const { generalNotes, specialRequirements, flagged, flagReason } = req.body;
+
+    const db = admin.firestore();
+    const registrationsRef = db.collection("registrations");
+    
+    const query = registrationsRef.where("registrationId", "==", registrationId);
+    const snapshot = await query.get();
+
+    if (snapshot.empty) {
+      return res.status(404).json({
+        success: false,
+        error: "Registration not found",
+        message: "No registration found with the provided ID",
+      });
+    }
+
+    const docRef = snapshot.docs[0].ref;
+    const updateData = {
+      "adminNotes.generalNotes": generalNotes || "",
+      "adminNotes.specialRequirements": specialRequirements || "",
+      "adminNotes.flagged": flagged || false,
+      "adminNotes.flagReason": flagReason || "",
+      "adminNotes.lastModifiedBy": req.user.email,
+      "adminNotes.lastModifiedAt": admin.firestore.Timestamp.now(),
+      updatedAt: admin.firestore.Timestamp.now(),
+    };
+
+    await docRef.update(updateData);
+
+    res.json({
+      success: true,
+      data: { registrationId, generalNotes, specialRequirements, flagged, flagReason },
+      message: "Admin notes updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating admin notes:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to update admin notes",
+      message: error.message,
+    });
+  }
+});
+
+// Admin endpoint to get all registrations with admin fields
+router.get("/admin/all", verifyToken, async (req, res) => {
+  try {
+    const db = admin.firestore();
+    const registrationsRef = db.collection("registrations");
+    const snapshot = await registrationsRef.orderBy("createdAt", "desc").get();
+
+    const registrations = [];
+    snapshot.forEach((doc) => {
+      registrations.push({
+        id: doc.id,
+        ...doc.data(),
+      });
+    });
+
+    res.json({
+      success: true,
+      data: registrations,
+      message: "All registrations retrieved successfully",
+    });
+  } catch (error) {
+    console.error("Error getting all registrations:", error);
     res.status(500).json({
       success: false,
       error: "Failed to retrieve registrations",

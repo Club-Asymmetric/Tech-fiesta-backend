@@ -379,6 +379,68 @@ router.post("/verify-payment", verifyToken, async (req, res) => {
       updatedAt: admin.firestore.Timestamp.now(),
       userId: req.user.uid,
       userEmail: req.user.email,
+      
+      // Admin tracking fields
+      arrivalStatus: {
+        hasArrived: false,
+        arrivalTime: null,
+        checkedInBy: null,
+        notes: ""
+      },
+      
+      // Workshop details for pass holders
+      workshopDetails: {
+        selectedWorkshop: registrationData.selectedPass ? (registrationData.selectedWorkshops?.[0]?.id || null) : null,
+        workshopTitle: registrationData.selectedPass ? (registrationData.selectedWorkshops?.[0]?.title || "") : "",
+        canEditWorkshop: !!registrationData.selectedPass, // Can edit if they have a pass
+        workshopAttended: false,
+        workshopAttendanceTime: null
+      },
+      
+      // Event attendance tracking
+      eventAttendance: {
+        techEvents: (registrationData.selectedEvents || []).map(event => ({
+          eventId: event.id,
+          eventTitle: event.title,
+          attended: false,
+          attendanceTime: null,
+          notes: ""
+        })),
+        workshops: (registrationData.selectedWorkshops || []).map(workshop => ({
+          workshopId: workshop.id,
+          workshopTitle: workshop.title,
+          attended: false,
+          attendanceTime: null,
+          notes: ""
+        })),
+        nonTechEvents: (registrationData.selectedNonTechEvents || []).map(event => ({
+          eventId: event.id,
+          eventTitle: event.title,
+          attended: false,
+          attendanceTime: null,
+          paidOnArrival: false,
+          amountPaid: 0,
+          notes: ""
+        }))
+      },
+      
+      // Admin notes and flags
+      adminNotes: {
+        generalNotes: "",
+        specialRequirements: "",
+        flagged: false,
+        flagReason: "",
+        lastModifiedBy: null,
+        lastModifiedAt: null
+      },
+      
+      // Contact and emergency details
+      contactDetails: {
+        emergencyContact: "",
+        emergencyPhone: "",
+        dietaryRestrictions: "",
+        accessibility: ""
+      }
     };
 
     // Save registration to database
