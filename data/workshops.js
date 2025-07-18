@@ -126,12 +126,12 @@ const workshops = [
   },
   {
     id: 6,
-    title: "FinTech",
+    title: "Money Masters",
     category: "Finance Technology",
     level: "Beginner",
     duration: "1 - 1.5 hours",
     description:
-      "Dive into the world of financial technology! Learn the basics of digital payments, blockchain, online banking, and how technology is transforming the finance industry. Get hands-on with FinTech tools and discover career opportunities in this fast-growing sector.",
+      "A deep dive into the world of finance, from the basics to learning how to invest in different ways and make money work for you.",
     prerequisites: [
       "Basic computer knowledge",
       "Interest in finance or technology",
