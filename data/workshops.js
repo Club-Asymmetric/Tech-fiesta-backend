@@ -139,7 +139,7 @@ const workshops = [
     materials: ["Laptop", "Internet access"],
     price: "₹100",
     citPrice: "₹100",
-    tags: ["FinTech", "Digital Payments", "Blockchain", "Online Banking", "Finance"],
+    tags: ["PersonalFinance", "Investing", "FinTech"],
     syllabus: [
       "Introduction to FinTech and its impact on finance",
       "Overview of digital payments and online banking",
