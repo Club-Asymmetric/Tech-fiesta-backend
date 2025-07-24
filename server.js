@@ -10,15 +10,22 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
+const allowedOrigins = [
+  process.env.FRONTEND_URL || "http://localhost:3000",
+  process.env.ADMIN_PAGE_URL || "http://localhost:3001",
+  "http://localhost:3000", // Frontend fallback
+  "http://localhost:3001", // Admin dashboard fallback
+];
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    origin: allowedOrigins,
     credentials: true,
   })
 );
 
 // Raw body parser for webhooks (must be before express.json())
-app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
+app.use("/api/payment/webhook", express.raw({ type: "application/json" }));
 
 // JSON parser for all other routes
 app.use(express.json());

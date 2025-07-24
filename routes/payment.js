@@ -379,51 +379,59 @@ router.post("/verify-payment", verifyToken, async (req, res) => {
       updatedAt: admin.firestore.Timestamp.now(),
       userId: req.user.uid,
       userEmail: req.user.email,
-      
+
       // Admin tracking fields
       arrivalStatus: {
         hasArrived: false,
         arrivalTime: null,
         checkedInBy: null,
-        notes: ""
+        notes: "",
       },
-      
+
       // Workshop details for pass holders
       workshopDetails: {
-        selectedWorkshop: registrationData.selectedPass ? (registrationData.selectedWorkshops?.[0]?.id || null) : null,
-        workshopTitle: registrationData.selectedPass ? (registrationData.selectedWorkshops?.[0]?.title || "") : "",
+        selectedWorkshop: registrationData.selectedPass
+          ? registrationData.selectedWorkshops?.[0]?.id || null
+          : null,
+        workshopTitle: registrationData.selectedPass
+          ? registrationData.selectedWorkshops?.[0]?.title || ""
+          : "",
         canEditWorkshop: !!registrationData.selectedPass, // Can edit if they have a pass
         workshopAttended: false,
-        workshopAttendanceTime: null
+        workshopAttendanceTime: null,
       },
-      
+
       // Event attendance tracking
       eventAttendance: {
-        techEvents: (registrationData.selectedEvents || []).map(event => ({
+        techEvents: (registrationData.selectedEvents || []).map((event) => ({
           eventId: event.id,
           eventTitle: event.title,
           attended: false,
           attendanceTime: null,
-          notes: ""
+          notes: "",
         })),
-        workshops: (registrationData.selectedWorkshops || []).map(workshop => ({
-          workshopId: workshop.id,
-          workshopTitle: workshop.title,
-          attended: false,
-          attendanceTime: null,
-          notes: ""
-        })),
-        nonTechEvents: (registrationData.selectedNonTechEvents || []).map(event => ({
-          eventId: event.id,
-          eventTitle: event.title,
-          attended: false,
-          attendanceTime: null,
-          paidOnArrival: false,
-          amountPaid: 0,
-          notes: ""
-        }))
+        workshops: (registrationData.selectedWorkshops || []).map(
+          (workshop) => ({
+            workshopId: workshop.id,
+            workshopTitle: workshop.title,
+            attended: false,
+            attendanceTime: null,
+            notes: "",
+          })
+        ),
+        nonTechEvents: (registrationData.selectedNonTechEvents || []).map(
+          (event) => ({
+            eventId: event.id,
+            eventTitle: event.title,
+            attended: false,
+            attendanceTime: null,
+            paidOnArrival: false,
+            amountPaid: 0,
+            notes: "",
+          })
+        ),
       },
-      
+
       // Admin notes and flags
       adminNotes: {
         generalNotes: "",
@@ -431,16 +439,16 @@ router.post("/verify-payment", verifyToken, async (req, res) => {
         flagged: false,
         flagReason: "",
         lastModifiedBy: null,
-        lastModifiedAt: null
+        lastModifiedAt: null,
       },
-      
+
       // Contact and emergency details
       contactDetails: {
         emergencyContact: "",
         emergencyPhone: "",
         dietaryRestrictions: "",
-        accessibility: ""
-      }
+        accessibility: "",
+      },
     };
 
     // Save registration to database
@@ -765,6 +773,111 @@ router.post("/test-email", verifyToken, async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to send test email",
+      message: error.message,
+    });
+  }
+});
+
+// Manual email sending endpoint for admin dashboard
+router.post("/send-manual-email", verifyToken, async (req, res) => {
+  try {
+    const { registrationData } = req.body;
+
+    if (!registrationData || !registrationData.userEmail) {
+      return res.status(400).json({
+        success: false,
+        error: "Registration data and email are required",
+      });
+    }
+
+    console.log(
+      `📧 Manual email send request for: ${registrationData.userEmail}`
+    );
+
+    // Send the registration confirmation email
+    const result = await sendRegistrationConfirmationEmail(
+      registrationData,
+      events,
+      workshops
+    );
+
+    if (result.success) {
+      console.log(
+        `✅ Manual email sent successfully to ${registrationData.userEmail}`
+      );
+      res.json({
+        success: true,
+        messageId: result.messageId,
+        usedEmail: result.usedEmail,
+        currentUsage: result.currentUsage,
+        message: `Email sent successfully to ${registrationData.userEmail}`,
+      });
+    } else {
+      console.error(
+        `❌ Failed to send manual email to ${registrationData.userEmail}:`,
+        result.error
+      );
+      res.status(500).json({
+        success: false,
+        error: result.error,
+        message: `Failed to send email to ${registrationData.userEmail}`,
+      });
+    }
+  } catch (error) {
+    console.error("Manual email sending error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to send manual email",
+      message: error.message,
+    });
+  }
+});
+
+// Send notification email endpoint for admin dashboard
+router.post("/send-notification", verifyToken, async (req, res) => {
+  try {
+    const { to, subject, htmlContent, textContent } = req.body;
+
+    if (!to || !subject || !htmlContent) {
+      return res.status(400).json({
+        success: false,
+        error: "Recipient, subject, and content are required",
+      });
+    }
+
+    console.log(`📧 Notification email send request to: ${to}`);
+
+    const result = await sendNotificationEmail(
+      to,
+      subject,
+      htmlContent,
+      textContent || htmlContent.replace(/<[^>]*>/g, "") // Strip HTML for text content if not provided
+    );
+
+    if (result.success) {
+      console.log(`✅ Notification email sent successfully to ${to}`);
+      res.json({
+        success: true,
+        messageId: result.messageId,
+        usedEmail: result.usedEmail,
+        message: `Notification email sent successfully to ${to}`,
+      });
+    } else {
+      console.error(
+        `❌ Failed to send notification email to ${to}:`,
+        result.error
+      );
+      res.status(500).json({
+        success: false,
+        error: result.error,
+        message: `Failed to send notification email to ${to}`,
+      });
+    }
+  } catch (error) {
+    console.error("Notification email sending error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to send notification email",
       message: error.message,
     });
   }
