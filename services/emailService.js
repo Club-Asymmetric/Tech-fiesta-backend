@@ -802,10 +802,101 @@ const logEmailTemplateInfo = (registrationData, events, workshops) => {
   }
 };
 
+// Send OD letter email with PDF attachment
+const sendODLetterWithAttachment = async (to, subject, htmlContent, textContent, attachment) => {
+  console.log(`📨 Starting OD letter email with attachment process`);
+  console.log(`📧 Recipient: ${to}`);
+  console.log(`📎 Attachment: ${attachment.filename}`);
+
+  let tried = 0;
+  let lastError = null;
+  let startIndex = currentEmailIndex;
+  do {
+    try {
+      const emailConfig = getAvailableEmailConfig();
+
+      if (!emailConfig.email || !emailConfig.password) {
+        console.error("❌ No email configuration available");
+        return { success: false, error: "Email service not configured" };
+      }
+
+      console.log(
+        `🔧 Using email config: ${emailConfig.email.replace(
+          /(.{3}).*(@.*)/,
+          "$1***$2"
+        )}`
+      );
+
+      const transporter = createTransporter(emailConfig);
+
+      const mailOptions = {
+        from: `"${emailConfig.name}" <${emailConfig.email}>`,
+        to: to,
+        subject: subject,
+        html: htmlContent,
+        text: textContent,
+        attachments: [
+          {
+            filename: attachment.filename,
+            content: attachment.content,
+            contentType: attachment.contentType,
+          },
+        ],
+      };
+
+      console.log(`📤 Sending OD letter email with PDF attachment...`);
+      console.log(`Mail options:`, {
+        from: mailOptions.from,
+        to: mailOptions.to,
+        subject: mailOptions.subject,
+        hasHtml: !!mailOptions.html,
+        hasText: !!mailOptions.text,
+        hasAttachment: !!mailOptions.attachments,
+        attachmentSize: attachment.content.length,
+      });
+
+      const info = await transporter.sendMail(mailOptions);
+      emailConfig.currentUsage++;
+      currentEmailIndex = (currentEmailIndex + 1) % emailConfigs.length;
+
+      console.log(`✅ OD letter email with PDF sent successfully!`);
+      console.log(`📧 Sent to: ${to}`);
+      console.log(`🆔 Message ID: ${info.messageId}`);
+      console.log(`📎 PDF attachment: ${attachment.filename} included`);
+
+      return {
+        success: true,
+        messageId: info.messageId,
+        usedEmail: emailConfig.email,
+      };
+    } catch (error) {
+      console.error("❌ Error sending OD letter email with attachment:", error);
+      lastError = error;
+      // If EAUTH or ELIMIT, try next config
+      if (error.code === "EAUTH" || error.code === "ELIMIT") {
+        currentEmailIndex = (currentEmailIndex + 1) % emailConfigs.length;
+        tried++;
+        if (tried < emailConfigs.length) {
+          console.log(`🔄 Retrying with next email config (index: ${currentEmailIndex})`);
+          continue;
+        }
+      }
+      // For other errors or after all configs tried, break
+      break;
+    }
+  } while (tried < emailConfigs.length && currentEmailIndex !== startIndex);
+  return {
+    success: false,
+    error: lastError ? lastError.message : 'Unknown error',
+    code: lastError ? lastError.code : undefined,
+  };
+};
+
 module.exports = {
   sendRegistrationConfirmationEmail,
   sendNotificationEmail,
   getEmailServiceStatus,
+  sendODLetterWithAttachment,
   resetUsageCounters,
   testEmailConnectivity,
   logEmailTemplateInfo,

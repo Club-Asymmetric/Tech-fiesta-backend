@@ -8,6 +8,7 @@ const {
   sendRegistrationConfirmationEmail,
   getEmailServiceStatus,
   sendNotificationEmail,
+  sendODLetterWithAttachment,
 } = require("../services/emailService");
 const { events } = require("../data/events");
 const { workshops } = require("../data/workshops");
@@ -878,6 +879,86 @@ router.post("/send-notification", verifyToken, async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to send notification email",
+      message: error.message,
+    });
+  }
+});
+
+// Send OD letter email with PDF attachment
+router.post("/send-od-letter", verifyToken, async (req, res) => {
+  try {
+    const multer = require('multer');
+    const upload = multer({ storage: multer.memoryStorage() });
+    
+    // Handle the multipart form data
+    upload.single('attachment')(req, res, async (err) => {
+      if (err) {
+        console.error("Multer error:", err);
+        return res.status(400).json({
+          success: false,
+          error: "File upload error",
+          message: err.message,
+        });
+      }
+
+      const { to, subject, htmlContent, textContent } = req.body;
+      const attachment = req.file;
+
+      if (!to || !subject || !htmlContent || !attachment) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing required fields",
+          message: "Recipient, subject, content, and PDF attachment are required",
+        });
+      }
+
+      console.log(`📧 OD Letter email with PDF attachment request to: ${to}`);
+      console.log(`📎 Attachment: ${attachment.originalname} (${attachment.size} bytes)`);
+
+      try {
+        // Use the existing email service but modify it to include attachment
+        const result = await sendODLetterWithAttachment(
+          to,
+          subject,
+          htmlContent,
+          textContent,
+          {
+            filename: attachment.originalname,
+            content: attachment.buffer,
+            contentType: 'application/pdf'
+          }
+        );
+
+        if (result.success) {
+          console.log(`✅ OD Letter email with PDF sent successfully to ${to}`);
+          res.json({
+            success: true,
+            messageId: result.messageId,
+            usedEmail: result.usedEmail,
+            message: `OD Letter email with PDF attachment sent successfully to ${to}`,
+          });
+        } else {
+          console.error(`❌ Failed to send OD Letter email to ${to}:`, result.error);
+          res.status(500).json({
+            success: false,
+            error: result.error,
+            message: `Failed to send OD Letter email to ${to}`,
+          });
+        }
+      } catch (emailError) {
+        console.error("OD Letter email sending error:", emailError);
+        res.status(500).json({
+          success: false,
+          error: "Failed to send OD Letter email",
+          message: emailError.message,
+        });
+      }
+    });
+  } catch (error) {
+    console.error("OD Letter endpoint error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to process OD Letter request",
       message: error.message,
     });
   }
